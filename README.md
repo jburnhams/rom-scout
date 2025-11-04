@@ -1,322 +1,429 @@
-# JavaScript/TypeScript Library Template
+# rom-scout
 
-A production-ready template for creating npm libraries with TypeScript, comprehensive testing, and automated CI/CD.
+A JavaScript/TypeScript library for identifying ROM files and fetching metadata from various gaming databases. Works in both browser and Node.js environments.
 
 ## Features
 
-- **TypeScript** with strict mode and multiple build targets
-- **Multi-format distribution**: ESM, CommonJS, and Browser bundles
-- **Testing**: Node.js built-in test framework with coverage reporting
-- **Browser testing**: Automated browser bundle validation
-- **GitHub Actions CI/CD**:
-  - Multi-version Node.js testing (20.x, 22.x, 24.x, 25.x)
-  - Automated version bumping and releases
-  - NPM publishing with OIDC (no stored credentials)
-  - GitHub Pages deployment for documentation
-  - Dependency review for security
-- **Bundle size enforcement**: Automated size budget checks
-- **Smoke tests**: Validate ESM and CJS exports
+- **Hash Calculation**: Calculate MD5, SHA-1, and CRC32 hashes for ROM files
+- **Multiple Data Sources**: Support for Hasheous, IGDB, and ScreenScraper APIs
+- **Browser & Node.js**: Works seamlessly in both environments
+- **TypeScript**: Full TypeScript support with type definitions
+- **Multi-format**: Available as ESM, CommonJS, and browser bundles
 
-## Getting Started
-
-### 1. Clone this template
+## Installation
 
 ```bash
-git clone <this-repo> my-new-library
-cd my-new-library
+npm install rom-scout
 ```
 
-### 2. Customize for your project
+## Quick Start
 
-Update the following in `package.json`:
-- `name`: Your library name
-- `version`: Start version (e.g., "0.1.0")
-- `description`: What your library does
-- `repository.url`: Your GitHub repository URL
-- `keywords`: Relevant keywords
-- `author`: Your name
-- `dependencies`: Add any runtime dependencies you need
+### Browser Usage
 
-Update bundle size limits in `scripts/check-bundle-size.mjs` if needed:
-- `BUNDLE_LIMIT`: Default 100KB for browser bundle
-- `GZIP_LIMIT`: Default 50KB for gzipped bundle
-- `ESM_LIMIT`: Default 200KB for ESM bundle
+```html
+<!-- Using ESM bundle -->
+<script type="module">
+  import { RomScout } from 'https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js';
 
-### 3. Update exports
+  const scout = new RomScout({
+    provider: 'hasheous',
+    hasheousUrl: 'https://your-hasheous-instance.com'
+  });
 
-Edit `scripts/smoke-esm.mjs` and `scripts/smoke-cjs.cjs` to match your library's exports.
+  // Handle file input
+  document.getElementById('rom-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
 
-Example:
-```javascript
-// Change this:
-assert.strictEqual(typeof mod.hello, 'function', 'ESM build should export hello');
+    // Identify the ROM
+    const metadata = await scout.identify(file);
 
-// To match your exports:
-assert.strictEqual(typeof mod.myFunction, 'function', 'ESM build should export myFunction');
+    if (metadata) {
+      console.log('Game:', metadata.title);
+      console.log('Platform:', metadata.platform);
+      console.log('Year:', metadata.year);
+      console.log('Cover art:', metadata.images);
+    }
+  });
+</script>
+
+<!-- Or using IIFE bundle -->
+<script src="https://unpkg.com/rom-scout/dist/browser/rom-scout.min.js"></script>
+<script>
+  const scout = new RomScout.RomScout({
+    hasheousUrl: 'https://your-hasheous-instance.com'
+  });
+</script>
 ```
 
-### 4. Write your code
+### Node.js Usage
 
-Replace the example code in `src/index.ts` with your library code.
-Add tests alongside your source files as `*.test.ts`.
+```typescript
+import { RomScout } from 'rom-scout';
+import { readFileSync } from 'fs';
 
-### 5. Install dependencies
+// Create a scout instance
+const scout = new RomScout({
+  provider: 'hasheous',
+  hasheousUrl: 'https://your-hasheous-instance.com'
+});
+
+// Load a ROM file
+const romData = readFileSync('pacman.zip');
+
+// Identify the ROM
+const metadata = await scout.identify(romData, 'pacman.zip');
+
+console.log('Game:', metadata.title);
+console.log('Platform:', metadata.platform);
+console.log('Publisher:', metadata.publisher);
+console.log('Year:', metadata.year);
+console.log('Description:', metadata.description);
+
+// Access cover art and screenshots
+if (metadata.images) {
+  for (const image of metadata.images) {
+    console.log(`${image.type}: ${image.url}`);
+  }
+}
+```
+
+## API Providers
+
+### Hasheous
+
+[Hasheous](https://github.com/Hasheous/Hasheous) is an open-source ROM metadata server.
+
+```typescript
+const scout = new RomScout({
+  provider: 'hasheous',
+  hasheousUrl: 'https://your-hasheous-instance.com',
+  timeout: 30000 // optional, in milliseconds
+});
+```
+
+### IGDB (Internet Game Database)
+
+Requires API credentials from [IGDB](https://api-docs.igdb.com/).
+
+```typescript
+const scout = new RomScout({
+  provider: 'igdb',
+  igdb: {
+    clientId: 'your-client-id',
+    clientSecret: 'your-client-secret'
+  }
+});
+```
+
+**Note:** IGDB doesn't support hash-based lookups, so it uses filename matching.
+
+### ScreenScraper
+
+Requires account from [ScreenScraper](https://www.screenscraper.fr/).
+
+```typescript
+const scout = new RomScout({
+  provider: 'screenscraper',
+  screenscraper: {
+    devId: 'your-dev-id',
+    devPassword: 'your-dev-password',
+    softwareName: 'your-app-name',
+    username: 'optional-username',
+    password: 'optional-password'
+  }
+});
+```
+
+## API Reference
+
+### RomScout Class
+
+#### `constructor(config?: RomScoutConfig)`
+
+Create a new RomScout instance.
+
+```typescript
+interface RomScoutConfig {
+  provider?: 'hasheous' | 'igdb' | 'screenscraper';
+  hasheousUrl?: string;
+  igdb?: {
+    clientId: string;
+    clientSecret: string;
+  };
+  screenscraper?: {
+    devId: string;
+    devPassword: string;
+    softwareName: string;
+    username?: string;
+    password?: string;
+  };
+  timeout?: number;
+}
+```
+
+#### `identify(data, filename?)`
+
+Identify a ROM file and fetch metadata.
+
+```typescript
+async identify(
+  data: File | Blob | ArrayBuffer | Uint8Array | Buffer,
+  filename?: string
+): Promise<RomMetadata | null>
+```
+
+**Parameters:**
+- `data`: ROM file data
+- `filename`: Optional filename (extracted from File object if not provided)
+
+**Returns:** ROM metadata or null if not found
+
+#### `hash(data)`
+
+Calculate hashes for ROM data without fetching metadata.
+
+```typescript
+async hash(
+  data: File | Blob | ArrayBuffer | Uint8Array | Buffer
+): Promise<{ md5: string; sha1: string; crc32: string }>
+```
+
+#### `lookup(request)`
+
+Look up ROM metadata using hash information.
+
+```typescript
+async lookup(request: HashLookupRequest): Promise<RomMetadata | null>
+
+interface HashLookupRequest {
+  md5?: string;
+  sha1?: string;
+  crc32?: string;
+  size?: number;
+  filename?: string;
+}
+```
+
+#### `lookupMultiple(request, providers?)`
+
+Try multiple providers in sequence until metadata is found.
+
+```typescript
+async lookupMultiple(
+  request: HashLookupRequest,
+  providers?: Array<'hasheous' | 'igdb' | 'screenscraper'>
+): Promise<RomMetadata | null>
+```
+
+### Standalone Functions
+
+#### `calculateHash(data, types?)`
+
+Calculate hash(es) for data.
+
+```typescript
+async function calculateHash(
+  data: Uint8Array | ArrayBuffer | Buffer,
+  types?: ('md5' | 'sha1' | 'crc32')[]
+): Promise<HashResult>
+
+interface HashResult {
+  md5?: string;
+  sha1?: string;
+  crc32?: string;
+}
+```
+
+#### `calculateSingleHash(data, type)`
+
+Calculate a single hash type.
+
+```typescript
+async function calculateSingleHash(
+  data: Uint8Array | ArrayBuffer | Buffer,
+  type: 'md5' | 'sha1' | 'crc32'
+): Promise<string>
+```
+
+### Types
+
+#### RomMetadata
+
+```typescript
+interface RomMetadata {
+  title: string;
+  platform?: string;
+  year?: number;
+  publisher?: string;
+  developer?: string;
+  description?: string;
+  genres?: string[];
+  players?: string;
+  images?: ImageMetadata[];
+  rating?: number;
+  source: string;
+  raw?: unknown;
+}
+```
+
+#### ImageMetadata
+
+```typescript
+interface ImageMetadata {
+  url: string;
+  type: string;
+  resolution?: string;
+  thumbnail?: string;
+}
+```
+
+## Examples
+
+### Hash Only (No API Call)
+
+```typescript
+import { RomScout } from 'rom-scout';
+
+const scout = new RomScout();
+const romData = await fetch('rom.zip').then(r => r.arrayBuffer());
+
+const hashes = await scout.hash(romData);
+console.log('MD5:', hashes.md5);
+console.log('SHA-1:', hashes.sha1);
+console.log('CRC32:', hashes.crc32);
+```
+
+### Try Multiple Providers
+
+```typescript
+const scout = new RomScout({
+  hasheousUrl: 'https://hasheous.example.com',
+  igdb: {
+    clientId: 'your-id',
+    clientSecret: 'your-secret'
+  }
+});
+
+const request = {
+  md5: 'abc123...',
+  sha1: 'def456...',
+  filename: 'game.rom'
+};
+
+// Try Hasheous first, then IGDB if not found
+const metadata = await scout.lookupMultiple(request, ['hasheous', 'igdb']);
+```
+
+### Browser File Upload Example
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ROM Scout Demo</title>
+</head>
+<body>
+  <input type="file" id="rom-file" accept=".zip,.rom,.nes,.snes,.gb,.gba">
+  <div id="result"></div>
+
+  <script type="module">
+    import { RomScout } from 'https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js';
+
+    const scout = new RomScout({
+      hasheousUrl: 'https://your-hasheous-instance.com'
+    });
+
+    document.getElementById('rom-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const result = document.getElementById('result');
+      result.innerHTML = 'Processing...';
+
+      try {
+        const metadata = await scout.identify(file);
+
+        if (metadata) {
+          result.innerHTML = `
+            <h2>${metadata.title}</h2>
+            <p><strong>Platform:</strong> ${metadata.platform || 'Unknown'}</p>
+            <p><strong>Year:</strong> ${metadata.year || 'Unknown'}</p>
+            <p><strong>Publisher:</strong> ${metadata.publisher || 'Unknown'}</p>
+            <p><strong>Description:</strong> ${metadata.description || 'No description'}</p>
+            ${metadata.images && metadata.images.length > 0 ? `
+              <img src="${metadata.images[0].url}" alt="Cover" style="max-width: 300px">
+            ` : ''}
+          `;
+        } else {
+          result.innerHTML = 'ROM not found in database';
+        }
+      } catch (error) {
+        result.innerHTML = `Error: ${error.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
+```
+
+## Supported Hash Algorithms
+
+- **MD5**: 128-bit hash, commonly used for ROM identification
+- **SHA-1**: 160-bit hash, more secure than MD5
+- **CRC32**: 32-bit checksum, fast and widely used
+
+All hash calculations work in both browser (using Web Crypto API and pure JS) and Node.js (using crypto module).
+
+## Browser Compatibility
+
+- Chrome/Edge 37+
+- Firefox 34+
+- Safari 11+
+- Any browser with Web Crypto API support
+
+## Node.js Compatibility
+
+- Node.js 20.0.0 or higher
+
+## Development
 
 ```bash
+# Install dependencies
 npm install
-```
-
-### 6. Build and test
-
-```bash
-# Run all tests (unit + browser)
-npm run test:all
-
-# Run just unit tests
-npm test
-
-# Run with coverage
-npm run coverage
 
 # Build the library
 npm run build
 
+# Run tests
+npm test
+
+# Run all tests (including browser)
+npm run test:all
+
 # Check bundle sizes
 npm run size
+
+# Generate coverage report
+npm run coverage
 ```
-
-## Project Structure
-
-```
-.
-├── .github/workflows/    # GitHub Actions workflows
-│   ├── ci.yml           # Continuous integration
-│   ├── release.yml      # Version bumping and releases
-│   ├── npm-publish.yml  # NPM publishing
-│   ├── github-pages.yml # Documentation deployment
-│   └── dependency-review.yml
-├── scripts/             # Build and utility scripts
-│   ├── clean.mjs        # Clean build artifacts
-│   ├── build-bundles.mjs # Generate ESM and browser bundles
-│   ├── build-browser-bundle.js # Package docs
-│   ├── check-bundle-size.mjs # Enforce size budgets
-│   ├── smoke-esm.mjs    # Test ESM exports
-│   └── smoke-cjs.cjs    # Test CJS exports
-├── src/                 # Source code
-│   ├── index.ts         # Main entry point
-│   └── *.test.ts        # Unit tests
-├── tests/               # Additional tests
-│   └── browser.test.ts  # Browser bundle tests
-├── docs/                # Documentation (optional)
-├── tsconfig.*.json      # TypeScript configurations
-├── package.json         # Project metadata
-└── .gitignore          # Git ignore rules
-```
-
-## Available Scripts
-
-- `npm run clean` - Remove build artifacts
-- `npm run build` - Build all formats (ESM, CJS, bundles)
-- `npm run build:esm` - Build ESM only
-- `npm run build:cjs` - Build CommonJS only
-- `npm run build:bundles` - Build browser bundles
-- `npm run build:docs` - Build documentation assets
-- `npm test` - Run unit tests
-- `npm run test:browser` - Run browser tests
-- `npm run test:all` - Run all tests
-- `npm run coverage` - Generate coverage report
-- `npm run smoke` - Run smoke tests
-- `npm run size` - Check bundle sizes
-- `npm run prepublishOnly` - Pre-publish checks (runs automatically)
-
-## GitHub Actions Setup
-
-### Required Secrets
-
-For automated releases and NPM publishing, configure these secrets in your GitHub repository:
-
-1. **RELEASE_TOKEN**: A GitHub Personal Access Token with `repo` and `packages:write` permissions
-   - Go to GitHub Settings → Developer settings → Personal access tokens
-   - Create a token with appropriate permissions
-   - Add it to your repository secrets as `RELEASE_TOKEN`
-
-2. **NPM Publishing**: This template uses OIDC for npm publishing (no token storage required)
-   - Configure your npm account for provenance: https://docs.npmjs.com/generating-provenance-statements
-   - No additional secrets needed!
-
-### Automated Version Bumping
-
-Commits to `main` trigger automatic version bumping based on commit messages:
-
-- **Patch** (0.0.x): Include `patch`, `fix`, or `fixes` in commit message
-- **Minor** (0.x.0): Include `minor`, `feat`, or `feature` in commit message
-- **Major** (x.0.0): Include `major` or `breaking` in commit message
-- **Pre-release**: Include `rc`, `pre`, `beta`, or `alpha` in commit message
-
-Example:
-```bash
-git commit -m "feat: add new feature"  # Bumps minor version
-git commit -m "fix: resolve bug"       # Bumps patch version
-```
-
-### GitHub Pages
-
-To enable GitHub Pages:
-1. Go to repository Settings → Pages
-2. Set Source to "GitHub Actions"
-3. The workflow will deploy `docs-dist/` to GitHub Pages
-
-Add your documentation HTML/assets to a `docs/` directory, and they'll be copied to the deployment.
-
-## Distribution Formats
-
-### ESM (ES Modules)
-```javascript
-import { hello, Greeter } from 'my-library';
-```
-
-### CommonJS
-```javascript
-const { hello, Greeter } = require('my-library');
-```
-
-### Browser (IIFE)
-```html
-<script src="https://unpkg.com/my-library/dist/browser/my-library.min.js"></script>
-<script>
-  const greeting = MyLibrary.hello('World');
-</script>
-```
-
-### Browser (ESM)
-```html
-<script type="module">
-  import { hello } from 'https://unpkg.com/my-library/dist/bundles/my-library.esm.js';
-  console.log(hello('World'));
-</script>
-```
-
-## Testing
-
-This template uses Node.js built-in test framework (no Jest, Mocha, etc. required).
-
-### Writing Tests
-
-Create test files alongside your source code:
-
-```typescript
-// src/mymodule.test.ts
-import { describe, it } from 'node:test';
-import assert from 'node:assert';
-import { myFunction } from './mymodule.js';
-
-describe('myFunction', () => {
-  it('should work correctly', () => {
-    assert.strictEqual(myFunction(), 'expected result');
-  });
-});
-```
-
-### Browser Testing
-
-Browser tests validate that your bundles work in browser environments:
-
-```typescript
-// tests/browser.test.ts
-import { test } from 'node:test';
-import assert from 'node:assert';
-
-test('bundle exports work', async () => {
-  const mod = await import('./dist/bundles/my-library.esm.js');
-  assert.strictEqual(typeof mod.myFunction, 'function');
-});
-```
-
-## Dependencies
-
-- **Development**:
-  - `typescript` - TypeScript compiler
-  - `@types/node` - Node.js type definitions
-  - `c8` - Code coverage tool
-  - `happy-dom` - Lightweight DOM for browser testing
-
-- **Production**: Add your runtime dependencies to `package.json`
-
-## Customization
-
-### Change Bundle Size Limits
-
-Edit `scripts/check-bundle-size.mjs`:
-
-```javascript
-const BUNDLE_LIMIT = 100 * 1024;  // 100KB
-const GZIP_LIMIT = 50 * 1024;     // 50KB
-const ESM_LIMIT = 200 * 1024;     // 200KB
-```
-
-### Add Linting
-
-This template doesn't include ESLint/Prettier by default. To add them:
-
-```bash
-npm install -D eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin prettier
-```
-
-Then configure `.eslintrc.json` and `.prettierrc` to your preferences.
-
-### Customize TypeScript
-
-The template includes 5 TypeScript configurations:
-- `tsconfig.base.json` - Shared base configuration
-- `tsconfig.json` - Root config (type checking only)
-- `tsconfig.esm.json` - ESM build
-- `tsconfig.cjs.json` - CommonJS build
-- `tsconfig.tests.json` - Test build
-
-Modify these to match your needs (e.g., change target, add paths, etc.).
-
-## Publishing
-
-### Manual Publishing
-
-```bash
-npm run build
-npm test
-npm publish
-```
-
-### Automated Publishing
-
-When you create a GitHub release (triggered automatically by version bump), the library is automatically published to npm via GitHub Actions.
 
 ## License
 
-MIT (or update to your preferred license in `package.json`)
+MIT
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Ensure all tests pass: `npm run test:all`
-5. Submit a pull request
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Troubleshooting
+## Acknowledgments
 
-### Tests fail with "Module not found"
+- [Hasheous](https://github.com/Hasheous/Hasheous) - Open-source ROM metadata server
+- [IGDB](https://www.igdb.com/) - Internet Game Database
+- [ScreenScraper](https://www.screenscraper.fr/) - ROM metadata service
+- [crc-32](https://github.com/SheetJS/js-crc32) - CRC32 implementation
 
-Run `npm run build` before running tests. The tests import from the built output.
+## Related Projects
 
-### Bundle size check fails
-
-Either optimize your code or update the limits in `scripts/check-bundle-size.mjs`.
-
-### GitHub Actions fail on release
-
-Ensure `RELEASE_TOKEN` is configured in repository secrets with appropriate permissions.
-
-### NPM publish fails
-
-1. Check that your npm account has 2FA enabled
-2. Verify OIDC is configured: https://docs.npmjs.com/generating-provenance-statements
-3. Ensure package name is available on npm
+- [Hasheous](https://github.com/Hasheous/Hasheous) - Self-hosted ROM metadata server
+- [EmulatorJS](https://github.com/EmulatorJS/EmulatorJS) - Browser-based emulation
+- [RetroArch](https://www.retroarch.com/) - Multi-platform emulator frontend

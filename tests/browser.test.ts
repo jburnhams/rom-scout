@@ -48,9 +48,11 @@ describe('Browser Bundle Tests', () => {
 
     const globalApi = context.window[globalName] ?? context.globalThis[globalName];
     assert.ok(globalApi, `Global ${globalName} namespace should exist`);
-    assert.strictEqual(typeof globalApi.hello, 'function', 'Should export hello function');
-    assert.strictEqual(typeof globalApi.goodbye, 'function', 'Should export goodbye function');
-    assert.strictEqual(typeof globalApi.Greeter, 'function', 'Should export Greeter class');
+    assert.strictEqual(typeof globalApi.RomScout, 'function', 'Should export RomScout class');
+    assert.strictEqual(typeof globalApi.calculateHash, 'function', 'Should export calculateHash function');
+    assert.strictEqual(typeof globalApi.HasheousClient, 'function', 'Should export HasheousClient class');
+    assert.strictEqual(typeof globalApi.IGDBClient, 'function', 'Should export IGDBClient class');
+    assert.strictEqual(typeof globalApi.ScreenScraperClient, 'function', 'Should export ScreenScraperClient class');
   });
 
   test('ESM bundle can be imported directly', async () => {
@@ -59,20 +61,22 @@ describe('Browser Bundle Tests', () => {
     const moduleUrl = pathToFileURL(esmBundlePath).href;
     const mod = await import(moduleUrl);
 
-    assert.strictEqual(typeof mod.hello, 'function', 'Should export hello function');
-    assert.strictEqual(typeof mod.goodbye, 'function', 'Should export goodbye function');
-    assert.strictEqual(typeof mod.Greeter, 'function', 'Should export Greeter class');
+    assert.strictEqual(typeof mod.RomScout, 'function', 'Should export RomScout class');
+    assert.strictEqual(typeof mod.calculateHash, 'function', 'Should export calculateHash function');
+    assert.strictEqual(typeof mod.HasheousClient, 'function', 'Should export HasheousClient class');
+    assert.strictEqual(typeof mod.IGDBClient, 'function', 'Should export IGDBClient class');
+    assert.strictEqual(typeof mod.ScreenScraperClient, 'function', 'Should export ScreenScraperClient class');
   });
 
   test('bundle size is reasonable', () => {
     const stats = fs.statSync(iifeBundlePath);
     const sizeKB = stats.size / 1024;
 
-    // Bundle should be less than 100KB
-    assert.ok(sizeKB < 100, `Bundle size (${sizeKB.toFixed(2)}KB) should be less than 100KB`);
+    // Bundle should be less than 150KB (rom-scout has hash implementations)
+    assert.ok(sizeKB < 150, `Bundle size (${sizeKB.toFixed(2)}KB) should be less than 150KB`);
 
-    // Bundle should be more than 0.1KB (sanity check)
-    assert.ok(sizeKB > 0.1, `Bundle size (${sizeKB.toFixed(2)}KB) seems too small`);
+    // Bundle should be more than 1KB (sanity check - has substantial hash code)
+    assert.ok(sizeKB > 1, `Bundle size (${sizeKB.toFixed(2)}KB) seems too small`);
   });
 });
 
@@ -83,26 +87,35 @@ describe('Functional Tests - Verify Bundle Works Correctly', () => {
     return await import(moduleUrl.href);
   }
 
-  test('hello function works in browser bundle', async () => {
+  test('RomScout class works in browser bundle', async () => {
     const bundle = await loadBundleModule();
 
-    assert.strictEqual(bundle.hello(), 'Hello, World!');
-    assert.strictEqual(bundle.hello('Browser'), 'Hello, Browser!');
+    const scout = new bundle.RomScout();
+    assert.ok(scout, 'Should create RomScout instance');
   });
 
-  test('goodbye function works in browser bundle', async () => {
+  test('calculateHash works in browser bundle', async () => {
     const bundle = await loadBundleModule();
 
-    assert.strictEqual(bundle.goodbye(), 'Goodbye, World!');
-    assert.strictEqual(bundle.goodbye('Browser'), 'Goodbye, Browser!');
+    const data = new TextEncoder().encode('Test data');
+    const hashes = await bundle.calculateHash(data);
+
+    assert.ok(hashes.md5, 'MD5 should be calculated');
+    assert.ok(hashes.sha1, 'SHA-1 should be calculated');
+    assert.ok(hashes.crc32, 'CRC32 should be calculated');
   });
 
-  test('Greeter class works in browser bundle', async () => {
+  test('RomScout.hash() method works in browser bundle', async () => {
     const bundle = await loadBundleModule();
 
-    const greeter = new bundle.Greeter('Test');
-    assert.strictEqual(greeter.greet(), 'Hello, Test!');
-    assert.strictEqual(greeter.farewell(), 'Goodbye, Test!');
+    const scout = new bundle.RomScout();
+    const data = new TextEncoder().encode('Browser test');
+
+    const hashes = await scout.hash(data);
+
+    assert.ok(hashes.md5, 'Should calculate MD5');
+    assert.ok(hashes.sha1, 'Should calculate SHA-1');
+    assert.ok(hashes.crc32, 'Should calculate CRC32');
   });
 
   test('IIFE bundle exports work correctly', () => {
@@ -117,17 +130,16 @@ describe('Functional Tests - Verify Bundle Works Correctly', () => {
 
     const api = context.window[globalName] ?? context.globalThis[globalName];
 
-    // Test hello function
-    assert.strictEqual(api.hello(), 'Hello, World!');
-    assert.strictEqual(api.hello('IIFE'), 'Hello, IIFE!');
+    // Test RomScout class
+    const scout = new api.RomScout();
+    assert.ok(scout, 'Should create RomScout instance in IIFE bundle');
 
-    // Test goodbye function
-    assert.strictEqual(api.goodbye(), 'Goodbye, World!');
-    assert.strictEqual(api.goodbye('IIFE'), 'Goodbye, IIFE!');
+    // Test calculateHash is available
+    assert.strictEqual(typeof api.calculateHash, 'function', 'calculateHash should be a function');
 
-    // Test Greeter class
-    const greeter = new api.Greeter('VM');
-    assert.strictEqual(greeter.greet(), 'Hello, VM!');
-    assert.strictEqual(greeter.farewell(), 'Goodbye, VM!');
+    // Test API clients are available
+    assert.strictEqual(typeof api.HasheousClient, 'function', 'HasheousClient should be a constructor');
+    assert.strictEqual(typeof api.IGDBClient, 'function', 'IGDBClient should be a constructor');
+    assert.strictEqual(typeof api.ScreenScraperClient, 'function', 'ScreenScraperClient should be a constructor');
   });
 });

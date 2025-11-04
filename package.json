@@ -1,10 +1,10 @@
 {
-  "name": "my-library",
+  "name": "rom-scout",
   "version": "0.1.0",
-  "description": "A description of your library",
+  "description": "A JavaScript library for identifying ROM files and fetching metadata from Hasheous, IGDB, and ScreenScraper APIs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/YOUR_REPO.git"
+    "url": "https://github.com/jburnhams/rom-scout.git"
   },
   "main": "dist/cjs/index.cjs",
   "module": "dist/esm/index.js",
@@ -16,22 +16,22 @@
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.cjs",
       "browser": {
-        "default": "./dist/bundles/my-library.esm.js"
+        "default": "./dist/bundles/rom-scout.esm.js"
       },
       "default": "./dist/esm/index.js"
     },
     "./bundle": {
       "types": "./dist/types/index.d.ts",
-      "default": "./dist/bundles/my-library.esm.js"
+      "default": "./dist/bundles/rom-scout.esm.js"
     },
     "./browser": {
-      "default": "./dist/browser/my-library.min.js"
+      "default": "./dist/browser/rom-scout.min.js"
     },
     "./package.json": "./package.json"
   },
-  "browser": "dist/browser/my-library.min.js",
-  "unpkg": "dist/browser/my-library.min.js",
-  "jsdelivr": "dist/browser/my-library.min.js",
+  "browser": "dist/browser/rom-scout.min.js",
+  "unpkg": "dist/browser/rom-scout.min.js",
+  "jsdelivr": "dist/browser/rom-scout.min.js",
   "files": [
     "dist/esm",
     "dist/cjs",
@@ -43,7 +43,7 @@
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/fix-cjs-extensions.mjs",
     "build:bundles": "node scripts/build-bundles.mjs",
     "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:bundles",
     "build:tests": "tsc -p tsconfig.tests.json",
@@ -60,10 +60,17 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "library",
-    "template"
+    "rom",
+    "emulator",
+    "metadata",
+    "scraper",
+    "hasheous",
+    "igdb",
+    "screenscraper",
+    "retro-gaming",
+    "game-identification"
   ],
-  "author": "",
+  "author": "jburnhams",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.9.1",
@@ -74,5 +81,7 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "crc-32": "^1.2.2"
+  }
 }

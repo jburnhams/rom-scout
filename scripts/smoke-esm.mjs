@@ -9,6 +9,10 @@ const esmPath = path.join(__dirname, '..', 'dist', 'esm', 'index.js');
 const mod = await import(pathToFileURL(esmPath).href);
 
 // Update these assertions to match your library's exports
-assert.strictEqual(typeof mod.hello, 'function', 'ESM build should export hello');
+assert.strictEqual(typeof mod.RomScout, 'function', 'ESM build should export RomScout');
+assert.strictEqual(typeof mod.calculateHash, 'function', 'ESM build should export calculateHash');
+assert.strictEqual(typeof mod.HasheousClient, 'function', 'ESM build should export HasheousClient');
+assert.strictEqual(typeof mod.IGDBClient, 'function', 'ESM build should export IGDBClient');
+assert.strictEqual(typeof mod.ScreenScraperClient, 'function', 'ESM build should export ScreenScraperClient');
 
-console.log('esm smoke test passed');
+console.log('✓ ESM smoke test passed');
