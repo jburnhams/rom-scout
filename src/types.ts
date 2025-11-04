@@ -12,6 +12,9 @@ export interface RomScoutConfig {
   /** Base URL for Hasheous API */
   hasheousUrl?: string;
 
+  /** Optional CORS proxy prefix for Hasheous API (e.g., 'https://proxy.corsfix.com/?') */
+  corsProxy?: string;
+
   /** IGDB API credentials */
   igdb?: {
     clientId: string;

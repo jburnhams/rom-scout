@@ -237,9 +237,18 @@ async function runHasheousExample() {
   showLoading('result-hasheous');
 
   try {
+    // Detect if we're on GitHub Pages and need a CORS proxy
+    const isGitHubPages = window.location.hostname.endsWith('.github.io');
+    const corsProxy = isGitHubPages ? 'https://proxy.corsfix.com/?' : undefined;
+
+    if (corsProxy) {
+      console.log('GitHub Pages detected, using CORS proxy:', corsProxy);
+    }
+
     const scout = new RomScout({
       provider: 'hasheous',
-      hasheousUrl: hasheousUrl
+      hasheousUrl: hasheousUrl,
+      corsProxy: corsProxy
     });
 
     const metadata = await scout.identify(romFile);

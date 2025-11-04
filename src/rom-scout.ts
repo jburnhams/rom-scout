@@ -63,6 +63,7 @@ export class RomScout {
       this.hasheousClient = new HasheousClient({
         baseUrl: this.config.hasheousUrl,
         timeout: this.config.timeout,
+        corsProxy: this.config.corsProxy,
       });
     }
 
