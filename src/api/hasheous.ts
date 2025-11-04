@@ -8,6 +8,8 @@ import type { HashLookupRequest, RomMetadata, ImageMetadata } from '../types.js'
 export interface HasheousConfig {
   baseUrl: string;
   timeout?: number;
+  /** Optional CORS proxy prefix (e.g., 'https://proxy.corsfix.com/?') */
+  corsProxy?: string;
 }
 
 /**
@@ -16,10 +18,12 @@ export interface HasheousConfig {
 export class HasheousClient {
   private baseUrl: string;
   private timeout: number;
+  private corsProxy?: string;
 
   constructor(config: HasheousConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, ''); // Remove trailing slash
     this.timeout = config.timeout || 30000;
+    this.corsProxy = config.corsProxy;
   }
 
   /**
@@ -34,7 +38,12 @@ export class HasheousClient {
       if (request.sha1) requestBody.shA1 = request.sha1;
       if (request.crc32) requestBody.crc = request.crc32;
 
-      const url = `${this.baseUrl}/api/v1/Lookup/ByHash`;
+      let url = `${this.baseUrl}/api/v1/Lookup/ByHash`;
+
+      // Apply CORS proxy if configured
+      if (this.corsProxy) {
+        url = `${this.corsProxy}${url}`;
+      }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);

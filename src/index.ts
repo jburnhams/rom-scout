@@ -31,6 +31,10 @@ export { RomScout } from './rom-scout.js';
 export { calculateHash, calculateSingleHash } from './hash.js';
 export type { HashType, HashResult } from './hash.js';
 
+// Archive utilities
+export { isZipArchive, isArchiveFilename, extractZipFiles } from './archive.js';
+export type { ExtractedFile } from './archive.js';
+
 // API clients
 export { HasheousClient } from './api/hasheous.js';
 export { IGDBClient } from './api/igdb.js';

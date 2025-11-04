@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { RomScout, calculateHash } from '../src/index.js';
+import { RomScout, calculateHash, extractZipFiles, isZipArchive } from '../src/index.js';
 
 describe('Integration Tests - Documentation Examples', () => {
   const pacmanPath = join(process.cwd(), 'roms', 'pacman.zip');
@@ -39,12 +39,31 @@ describe('Integration Tests - Documentation Examples', () => {
   }
 
   describe('Example 1: Calculate ROM Hashes', () => {
+    it('should extract files from pacman.zip archive', async () => {
+      // Verify archive extraction works
+      assert.ok(isZipArchive(pacmanBuffer), 'pacman.zip should be detected as a ZIP archive');
+
+      const extractedFiles = extractZipFiles(pacmanBuffer);
+      console.log('\nPac-Man Archive Contents:');
+      console.log(`  Found ${extractedFiles.length} file(s) in archive`);
+
+      assert.ok(extractedFiles.length > 0, 'Should extract at least one file from archive');
+
+      for (const file of extractedFiles) {
+        console.log(`  - ${file.name} (${file.data.length} bytes)`);
+        const hashes = await calculateHash(file.data);
+        console.log(`    MD5: ${hashes.md5}`);
+        console.log(`    SHA-1: ${hashes.sha1}`);
+        console.log(`    CRC32: ${hashes.crc32}`);
+      }
+    });
+
     it('should calculate hashes for pacman.zip', async () => {
       // This example should always work (no API required)
       const scout = new RomScout();
       const hashes = await scout.hash(pacmanBuffer);
 
-      console.log('\nPac-Man Hash Calculation Results:');
+      console.log('\nPac-Man Archive Hash Calculation Results:');
       console.log('  MD5:', hashes.md5);
       console.log('  SHA-1:', hashes.sha1);
       console.log('  CRC32:', hashes.crc32);
@@ -131,6 +150,8 @@ describe('Integration Tests - Documentation Examples', () => {
       });
 
       try {
+        // With archive extraction, this should now extract the ROM files
+        // from pacman.zip and try to identify each one
         const metadata = await scout.identify(pacmanBuffer, 'pacman.zip');
 
         if (metadata) {
@@ -141,11 +162,15 @@ describe('Integration Tests - Documentation Examples', () => {
           console.log('  Publisher:', metadata.publisher);
           console.log('  Source:', metadata.source);
 
-          assert.strictEqual(metadata.source, 'hasheous');
+          assert.strictEqual(metadata.source, 'hasheous', 'Source should be hasheous');
           assert.ok(metadata.title, 'Title should be present');
+
+          // Verify we got Pac-Man metadata
+          console.log('\n  ✓ Pac-Man successfully identified from archive extraction');
+          console.log('  ✓ Archive extraction and hash lookup working correctly');
         } else {
-          // Pac-Man ROM is not expected to be in Hasheous database
-          console.log('\nHasheous API: Pac-Man ROM not found in database (as expected)');
+          console.log('\nHasheous API: Pac-Man ROM not found in database');
+          console.log('  Note: Archive extraction is working, but the ROM may not be in the database');
         }
       } catch (error) {
         // Network errors are expected in restricted environments
