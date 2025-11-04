@@ -188,49 +188,31 @@ describe('Integration Tests - Documentation Examples', () => {
           // Verify source
           assert.strictEqual(metadata.source, 'hasheous', 'Source should be hasheous');
 
-          // Verify title
+          // Verify title - Hasheous v1 API provides this
           assert.ok(metadata.title, 'Title should be present');
-          assert.ok(
-            metadata.title.toLowerCase().includes('sonic'),
-            `Title should contain "sonic", got: ${metadata.title}`
+          assert.strictEqual(
+            metadata.title,
+            'Sonic the Hedgehog',
+            `Title should be "Sonic the Hedgehog", got: ${metadata.title}`
           );
 
-          // Verify platform (should be Master System or SMS)
+          // Verify platform - Hasheous v1 API provides this
           assert.ok(metadata.platform, 'Platform should be present');
-          const platformLower = metadata.platform.toLowerCase();
-          assert.ok(
-            platformLower.includes('master system') ||
-            platformLower.includes('sms') ||
-            platformLower.includes('sega master system'),
-            `Platform should be Master System or SMS, got: ${metadata.platform}`
+          assert.strictEqual(
+            metadata.platform,
+            'Sega Master System',
+            `Platform should be "Sega Master System", got: ${metadata.platform}`
           );
 
-          // Verify year (Sonic 1 for Master System was released in 1991)
-          if (metadata.year) {
-            assert.ok(
-              metadata.year >= 1991 && metadata.year <= 1992,
-              `Year should be around 1991-1992, got: ${metadata.year}`
-            );
-          }
+          // Verify publisher - Hasheous v1 API provides this
+          assert.ok(metadata.publisher, 'Publisher should be present');
+          assert.strictEqual(
+            metadata.publisher,
+            'Sega',
+            `Publisher should be "Sega", got: ${metadata.publisher}`
+          );
 
-          // Verify publisher (should be Sega)
-          if (metadata.publisher) {
-            assert.ok(
-              metadata.publisher.toLowerCase().includes('sega'),
-              `Publisher should contain "sega", got: ${metadata.publisher}`
-            );
-          }
-
-          // Verify developer (should be Sega or Ancient)
-          if (metadata.developer) {
-            const devLower = metadata.developer.toLowerCase();
-            assert.ok(
-              devLower.includes('sega') || devLower.includes('ancient'),
-              `Developer should be Sega or Ancient, got: ${metadata.developer}`
-            );
-          }
-
-          // Check for images
+          // Check for images - Hasheous v1 API provides logo and other images in attributes
           if (metadata.images && metadata.images.length > 0) {
             console.log(`\n  Found ${metadata.images.length} image(s):`);
 
@@ -244,49 +226,34 @@ describe('Integration Tests - Documentation Examples', () => {
                 typeof image.url === 'string' && image.url.length > 0,
                 'Image URL should be a non-empty string'
               );
+
+              // Verify URL format (should be either full URL or path to /api/v1/images/)
+              assert.ok(
+                image.url.includes('http') || image.url.includes('/api/v1/images/'),
+                `Image URL should be valid, got: ${image.url}`
+              );
             }
 
-            // Verify we have at least one cover or boxart image
-            const hasCoverArt = metadata.images.some(img =>
-              img.type === 'cover' ||
-              img.type === 'boxart' ||
-              img.type.toLowerCase().includes('cover') ||
-              img.type.toLowerCase().includes('box')
+            // Verify we have at least one logo image
+            const hasLogo = metadata.images.some(img =>
+              img.type === 'logo' ||
+              img.type.toLowerCase().includes('logo')
             );
 
-            if (hasCoverArt) {
-              console.log('  ✓ Cover/box art image found');
-            }
+            assert.ok(hasLogo, 'Should have at least one logo image');
+            console.log('  ✓ Logo image found');
           } else {
-            console.log('  Note: No images found in response');
+            // Images should be present for Sonic
+            console.log('  Warning: No images found in response');
           }
 
-          // Log other metadata if present
-          if (metadata.description) {
-            console.log(`\n  Description: ${metadata.description.substring(0, 100)}...`);
-          }
-          if (metadata.genres && metadata.genres.length > 0) {
-            console.log(`  Genres: ${metadata.genres.join(', ')}`);
+          // Note: Hasheous v1 /api/v1/Lookup/ByHash endpoint does not directly provide:
+          // - year, developer, description, genres, players, rating
+          // These would need to be fetched from the metadata sources (IGDB, TheGamesDB, etc.)
+          // using the metadata IDs provided in the raw response
 
-            // Verify it's a platformer
-            const genresLower = metadata.genres.map(g => g.toLowerCase()).join(' ');
-            assert.ok(
-              genresLower.includes('platform') || genresLower.includes('action'),
-              `Should be categorized as platform or action genre, got: ${metadata.genres.join(', ')}`
-            );
-          }
-          if (metadata.players) {
-            console.log(`  Players: ${metadata.players}`);
-          }
-          if (metadata.rating) {
-            console.log(`  Rating: ${metadata.rating}`);
-            assert.ok(
-              typeof metadata.rating === 'number' && metadata.rating >= 0 && metadata.rating <= 100,
-              'Rating should be a number between 0 and 100'
-            );
-          }
-
-          console.log('\n  ✓ Sonic the Hedgehog successfully identified via Hasheous with full metadata');
+          console.log('\n  ✓ Sonic the Hedgehog successfully identified via Hasheous');
+          console.log('  ✓ Title, platform, publisher, and images verified');
         }
       } catch (error) {
         // Network errors are expected in restricted environments
