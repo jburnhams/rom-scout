@@ -6,13 +6,21 @@ import { RomScout, calculateHash } from './index.js';
 
 describe('RomScout', () => {
   const pacmanPath = join(process.cwd(), 'roms', 'pacman.zip');
+  const sonicPath = join(process.cwd(), 'roms', 'sonic.bin');
   let pacmanBuffer: Buffer;
+  let sonicBuffer: Buffer;
 
-  // Load pacman.zip before tests
+  // Load test ROMs before tests
   try {
     pacmanBuffer = readFileSync(pacmanPath);
   } catch (error) {
     console.warn('Warning: Could not load pacman.zip for testing');
+  }
+
+  try {
+    sonicBuffer = readFileSync(sonicPath);
+  } catch (error) {
+    console.warn('Warning: Could not load sonic.bin for testing');
   }
 
   describe('constructor', () => {
@@ -112,6 +120,27 @@ describe('RomScout', () => {
       console.log('  CRC32:', hashes.crc32);
       console.log('  Size:', pacmanBuffer.length, 'bytes');
     });
+
+    it('should calculate hashes for sonic.bin', async function (this: any) {
+      if (!sonicBuffer) {
+        this.skip();
+        return;
+      }
+
+      const scout = new RomScout();
+      const hashes = await scout.hash(sonicBuffer);
+
+      assert.ok(hashes.md5, 'MD5 hash should be calculated for sonic.bin');
+      assert.ok(hashes.sha1, 'SHA-1 hash should be calculated for sonic.bin');
+      assert.ok(hashes.crc32, 'CRC32 hash should be calculated for sonic.bin');
+
+      // Log the hashes for reference
+      console.log('Sonic the Hedgehog ROM hashes:');
+      console.log('  MD5:', hashes.md5);
+      console.log('  SHA-1:', hashes.sha1);
+      console.log('  CRC32:', hashes.crc32);
+      console.log('  Size:', sonicBuffer.length, 'bytes');
+    });
   });
 
   describe('identify method with pacman.zip', () => {
@@ -144,6 +173,40 @@ describe('RomScout', () => {
       } catch (error) {
         assert.fail('Should not throw error');
       }
+    });
+  });
+
+  describe('identify method with sonic.bin', () => {
+    it('should process sonic.bin file', async function (this: any) {
+      if (!sonicBuffer) {
+        this.skip();
+        return;
+      }
+
+      const scout = new RomScout({
+        hasheousUrl: 'https://hasheous.example.com',
+      });
+
+      // We can't actually make API calls in tests, but we can verify
+      // the file is processed correctly
+      const hashes = await scout.hash(sonicBuffer);
+      assert.ok(hashes.md5, 'Should calculate MD5 for sonic.bin');
+    });
+
+    it('should handle Master System ROM file', async function (this: any) {
+      if (!sonicBuffer) {
+        this.skip();
+        return;
+      }
+
+      const scout = new RomScout();
+      const hashes = await scout.hash(sonicBuffer);
+
+      // Verify the file size is correct for a Master System ROM
+      assert.strictEqual(sonicBuffer.length, 262144, 'Sonic ROM should be 256KB');
+      assert.ok(hashes.md5, 'Should calculate MD5 hash');
+      assert.ok(hashes.sha1, 'Should calculate SHA-1 hash');
+      assert.ok(hashes.crc32, 'Should calculate CRC32 hash');
     });
   });
 
@@ -227,6 +290,39 @@ describe('RomScout', () => {
 
       const scoutHashes = await scout.hash(pacmanBuffer);
       const directHashes = await calculateHash(pacmanBuffer);
+
+      assert.strictEqual(scoutHashes.md5, directHashes.md5, 'MD5 should match');
+      assert.strictEqual(scoutHashes.sha1, directHashes.sha1, 'SHA-1 should match');
+      assert.strictEqual(scoutHashes.crc32, directHashes.crc32, 'CRC32 should match');
+    });
+
+    it('should calculate consistent hashes for sonic.bin', async function (this: any) {
+      if (!sonicBuffer) {
+        this.skip();
+        return;
+      }
+
+      const scout = new RomScout();
+
+      // Calculate hashes multiple times
+      const hashes1 = await scout.hash(sonicBuffer);
+      const hashes2 = await scout.hash(sonicBuffer);
+
+      assert.strictEqual(hashes1.md5, hashes2.md5, 'MD5 should be consistent');
+      assert.strictEqual(hashes1.sha1, hashes2.sha1, 'SHA-1 should be consistent');
+      assert.strictEqual(hashes1.crc32, hashes2.crc32, 'CRC32 should be consistent');
+    });
+
+    it('should match direct hash calculation for sonic.bin', async function (this: any) {
+      if (!sonicBuffer) {
+        this.skip();
+        return;
+      }
+
+      const scout = new RomScout();
+
+      const scoutHashes = await scout.hash(sonicBuffer);
+      const directHashes = await calculateHash(sonicBuffer);
 
       assert.strictEqual(scoutHashes.md5, directHashes.md5, 'MD5 should match');
       assert.strictEqual(scoutHashes.sha1, directHashes.sha1, 'SHA-1 should match');

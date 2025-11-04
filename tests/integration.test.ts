@@ -11,9 +11,11 @@ import { RomScout, calculateHash } from '../src/index.js';
 
 describe('Integration Tests - Documentation Examples', () => {
   const pacmanPath = join(process.cwd(), 'roms', 'pacman.zip');
+  const sonicPath = join(process.cwd(), 'roms', 'sonic.bin');
   let pacmanBuffer: Buffer;
+  let sonicBuffer: Buffer;
 
-  // Load pacman.zip before tests
+  // Load test ROMs before tests
   try {
     if (!existsSync(pacmanPath)) {
       throw new Error(`Test ROM not found: ${pacmanPath}`);
@@ -25,13 +27,43 @@ describe('Integration Tests - Documentation Examples', () => {
     throw error;
   }
 
+  try {
+    if (!existsSync(sonicPath)) {
+      throw new Error(`Test ROM not found: ${sonicPath}`);
+    }
+    sonicBuffer = readFileSync(sonicPath);
+    console.log(`Loaded test ROM: ${sonicPath} (${sonicBuffer.length} bytes)`);
+  } catch (error) {
+    console.error('Failed to load test ROM:', error);
+    throw error;
+  }
+
   describe('Example 1: Calculate ROM Hashes', () => {
     it('should calculate hashes for pacman.zip', async () => {
       // This example should always work (no API required)
       const scout = new RomScout();
       const hashes = await scout.hash(pacmanBuffer);
 
-      console.log('\nHash Calculation Results:');
+      console.log('\nPac-Man Hash Calculation Results:');
+      console.log('  MD5:', hashes.md5);
+      console.log('  SHA-1:', hashes.sha1);
+      console.log('  CRC32:', hashes.crc32);
+
+      assert.ok(hashes.md5, 'MD5 hash should be calculated');
+      assert.ok(hashes.sha1, 'SHA-1 hash should be calculated');
+      assert.ok(hashes.crc32, 'CRC32 hash should be calculated');
+
+      assert.match(hashes.md5, /^[a-f0-9]{32}$/, 'MD5 should be valid format');
+      assert.match(hashes.sha1, /^[a-f0-9]{40}$/, 'SHA-1 should be valid format');
+      assert.match(hashes.crc32, /^[a-f0-9]{8}$/, 'CRC32 should be valid format');
+    });
+
+    it('should calculate hashes for sonic.bin', async () => {
+      // This example should always work (no API required)
+      const scout = new RomScout();
+      const hashes = await scout.hash(sonicBuffer);
+
+      console.log('\nSonic the Hedgehog Hash Calculation Results:');
       console.log('  MD5:', hashes.md5);
       console.log('  SHA-1:', hashes.sha1);
       console.log('  CRC32:', hashes.crc32);
@@ -90,7 +122,7 @@ describe('Integration Tests - Documentation Examples', () => {
 
     // Note: Using the public Hasheous instance at https://hasheous.org
     // Can be overridden with HASHEOUS_URL environment variable
-    it('should fetch metadata from Hasheous API', async () => {
+    it('should fetch metadata from Hasheous API for pacman.zip', async () => {
       const hasheousUrl = process.env.HASHEOUS_URL || 'https://hasheous.org';
 
       const scout = new RomScout({
@@ -102,7 +134,7 @@ describe('Integration Tests - Documentation Examples', () => {
         const metadata = await scout.identify(pacmanBuffer, 'pacman.zip');
 
         if (metadata) {
-          console.log('\nHasheous API Results:');
+          console.log('\nHasheous API Results (Pac-Man):');
           console.log('  Title:', metadata.title);
           console.log('  Platform:', metadata.platform);
           console.log('  Year:', metadata.year);
@@ -112,7 +144,55 @@ describe('Integration Tests - Documentation Examples', () => {
           assert.strictEqual(metadata.source, 'hasheous');
           assert.ok(metadata.title, 'Title should be present');
         } else {
-          console.log('\nHasheous API: ROM not found in database');
+          console.log('\nHasheous API: Pac-Man ROM not found in database');
+        }
+      } catch (error) {
+        // Network errors are expected in restricted environments
+        if (error instanceof Error && (
+          error.message.includes('fetch failed') ||
+          error.message.includes('ENOTFOUND') ||
+          error.message.includes('ECONNREFUSED') ||
+          error.message.includes('timed out')
+        )) {
+          console.log('\nHasheous API: Network access blocked or unavailable');
+          console.log('  (This is expected in restricted test environments)');
+          console.log('  The public instance at https://hasheous.org is available when network access is allowed');
+          return; // Pass the test
+        }
+        // Re-throw other errors (actual bugs)
+        console.error('Hasheous API error:', error);
+        throw error;
+      }
+    });
+
+    it('should fetch metadata from Hasheous API for sonic.bin', async () => {
+      const hasheousUrl = process.env.HASHEOUS_URL || 'https://hasheous.org';
+
+      const scout = new RomScout({
+        provider: 'hasheous',
+        hasheousUrl: hasheousUrl
+      });
+
+      try {
+        const metadata = await scout.identify(sonicBuffer, 'sonic.bin');
+
+        if (metadata) {
+          console.log('\nHasheous API Results (Sonic the Hedgehog):');
+          console.log('  Title:', metadata.title);
+          console.log('  Platform:', metadata.platform);
+          console.log('  Year:', metadata.year);
+          console.log('  Publisher:', metadata.publisher);
+          console.log('  Developer:', metadata.developer);
+          console.log('  Source:', metadata.source);
+
+          assert.strictEqual(metadata.source, 'hasheous');
+          assert.ok(metadata.title, 'Title should be present');
+
+          // Sonic the Hedgehog is expected to be found in Hasheous
+          console.log('  ✓ Sonic the Hedgehog successfully identified via Hasheous');
+        } else {
+          console.log('\nHasheous API: Sonic ROM not found in database');
+          console.log('  (Note: Sonic the Hedgehog for Master System is expected to be in the database)');
         }
       } catch (error) {
         // Network errors are expected in restricted environments

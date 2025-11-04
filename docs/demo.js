@@ -20,6 +20,8 @@ try {
 
 // Global state
 let pacmanFile = null;
+let sonicFile = null;
+let currentRomFile = null;
 
 /**
  * Load the pacman.zip file
@@ -36,7 +38,26 @@ async function loadPacmanFile() {
     console.log('Loaded pacman.zip:', pacmanFile.size, 'bytes');
   } catch (error) {
     console.error('Error loading pacman.zip:', error);
-    showError('Failed to load test ROM file');
+    showError('Failed to load Pac-Man ROM file');
+  }
+}
+
+/**
+ * Load the sonic.bin file
+ */
+async function loadSonicFile() {
+  try {
+    const response = await fetch('sonic.bin');
+    if (!response.ok) {
+      throw new Error('Failed to load sonic.bin');
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    // Create a File-like object
+    sonicFile = new File([arrayBuffer], 'sonic.bin', { type: 'application/octet-stream' });
+    console.log('Loaded sonic.bin:', sonicFile.size, 'bytes');
+  } catch (error) {
+    console.error('Error loading sonic.bin:', error);
+    showError('Failed to load Sonic ROM file');
   }
 }
 
@@ -80,9 +101,9 @@ function escapeHtml(text) {
 /**
  * Format hash results as HTML
  */
-function formatHashResult(hashes) {
+function formatHashResult(hashes, filename = '') {
   return `
-    <div class="result-title">Hash Calculation Results</div>
+    <div class="result-title">Hash Calculation Results${filename ? ` - ${escapeHtml(filename)}` : ''}</div>
     <div class="result-field"><strong>MD5:</strong> ${hashes.md5}</div>
     <div class="result-field"><strong>SHA-1:</strong> ${hashes.sha1}</div>
     <div class="result-field"><strong>CRC32:</strong> ${hashes.crc32}</div>
@@ -155,11 +176,30 @@ function formatMetadataResult(metadata) {
 }
 
 /**
+ * Get the selected ROM file
+ */
+function getSelectedRomFile(resultId) {
+  const romSelect = document.querySelector(`[data-result="${resultId}"] select`);
+  if (!romSelect) {
+    // Fallback to pacman if no selector
+    return pacmanFile;
+  }
+
+  const selectedRom = romSelect.value;
+  if (selectedRom === 'sonic') {
+    return sonicFile;
+  }
+  return pacmanFile;
+}
+
+/**
  * Example 1: Calculate hashes
  */
 async function runHashExample() {
-  if (!pacmanFile) {
-    showError('result-hash', 'Pac-Man ROM file not loaded');
+  const romFile = getSelectedRomFile('result-hash');
+
+  if (!romFile) {
+    showError('result-hash', 'ROM file not loaded');
     return;
   }
 
@@ -167,10 +207,10 @@ async function runHashExample() {
 
   try {
     const scout = new RomScout();
-    const hashes = await scout.hash(pacmanFile);
+    const hashes = await scout.hash(romFile);
 
     console.log('Hash results:', hashes);
-    showSuccess('result-hash', formatHashResult(hashes));
+    showSuccess('result-hash', formatHashResult(hashes, romFile.name));
   } catch (error) {
     console.error('Hash calculation error:', error);
     showError('result-hash', error);
@@ -181,8 +221,10 @@ async function runHashExample() {
  * Example 2: Hasheous API
  */
 async function runHasheousExample() {
-  if (!pacmanFile) {
-    showError('result-hasheous', 'Pac-Man ROM file not loaded');
+  const romFile = getSelectedRomFile('result-hasheous');
+
+  if (!romFile) {
+    showError('result-hasheous', 'ROM file not loaded');
     return;
   }
 
@@ -200,7 +242,7 @@ async function runHasheousExample() {
       hasheousUrl: hasheousUrl
     });
 
-    const metadata = await scout.identify(pacmanFile);
+    const metadata = await scout.identify(romFile);
 
     console.log('Hasheous result:', metadata);
     showSuccess('result-hasheous', formatMetadataResult(metadata));
@@ -214,8 +256,10 @@ async function runHasheousExample() {
  * Example 3: IGDB API
  */
 async function runIgdbExample() {
-  if (!pacmanFile) {
-    showError('result-igdb', 'Pac-Man ROM file not loaded');
+  const romFile = getSelectedRomFile('result-igdb');
+
+  if (!romFile) {
+    showError('result-igdb', 'ROM file not loaded');
     return;
   }
 
@@ -238,7 +282,7 @@ async function runIgdbExample() {
       }
     });
 
-    const metadata = await scout.identify(pacmanFile);
+    const metadata = await scout.identify(romFile);
 
     console.log('IGDB result:', metadata);
     showSuccess('result-igdb', formatMetadataResult(metadata));
@@ -252,8 +296,10 @@ async function runIgdbExample() {
  * Example 4: ScreenScraper API
  */
 async function runScreenScraperExample() {
-  if (!pacmanFile) {
-    showError('result-screenscraper', 'Pac-Man ROM file not loaded');
+  const romFile = getSelectedRomFile('result-screenscraper');
+
+  if (!romFile) {
+    showError('result-screenscraper', 'ROM file not loaded');
     return;
   }
 
@@ -284,7 +330,7 @@ async function runScreenScraperExample() {
     if (password) config.screenscraper.password = password;
 
     const scout = new RomScout(config);
-    const metadata = await scout.identify(pacmanFile);
+    const metadata = await scout.identify(romFile);
 
     console.log('ScreenScraper result:', metadata);
     showSuccess('result-screenscraper', formatMetadataResult(metadata));
@@ -300,8 +346,11 @@ async function runScreenScraperExample() {
 async function init() {
   console.log('Initializing rom-scout demo...');
 
-  // Load the test ROM file
-  await loadPacmanFile();
+  // Load the test ROM files
+  await Promise.all([
+    loadPacmanFile(),
+    loadSonicFile()
+  ]);
 
   // Set up event listeners for run buttons
   const runButtons = document.querySelectorAll('.run-btn');
