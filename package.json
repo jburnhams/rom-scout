@@ -1,0 +1,78 @@
+{
+  "name": "my-library",
+  "version": "0.1.0",
+  "description": "A description of your library",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/YOUR_REPO.git"
+  },
+  "main": "dist/cjs/index.cjs",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.cjs",
+      "browser": {
+        "default": "./dist/bundles/my-library.esm.js"
+      },
+      "default": "./dist/esm/index.js"
+    },
+    "./bundle": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/bundles/my-library.esm.js"
+    },
+    "./browser": {
+      "default": "./dist/browser/my-library.min.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "browser": "dist/browser/my-library.min.js",
+  "unpkg": "dist/browser/my-library.min.js",
+  "jsdelivr": "dist/browser/my-library.min.js",
+  "files": [
+    "dist/esm",
+    "dist/cjs",
+    "dist/bundles",
+    "dist/browser",
+    "dist/types",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:bundles": "node scripts/build-bundles.mjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:bundles",
+    "build:tests": "tsc -p tsconfig.tests.json",
+    "build:browser-test": "tsc tests/browser.test.ts --outDir build/browser-tests --module ES2022 --target ES2022 --moduleResolution node --esModuleInterop --allowSyntheticDefaultImports --skipLibCheck",
+    "build:docs": "npm run build && node scripts/build-browser-bundle.js",
+    "test": "npm run build && npm run build:tests && node --expose-gc --test build/tests/*.test.js",
+    "test:browser": "npm run build:docs && npm run build:browser-test && node --expose-gc --test build/browser-tests/browser.test.js",
+    "test:all": "npm run test && npm run test:browser",
+    "smoke:esm": "node scripts/smoke-esm.mjs",
+    "smoke:cjs": "node scripts/smoke-cjs.cjs",
+    "smoke": "npm run smoke:esm && npm run smoke:cjs",
+    "coverage": "npm run build && npm run build:tests && c8 --reporter=lcov --reporter=text node --expose-gc --test build/tests/*.test.js",
+    "size": "npm run build && node scripts/check-bundle-size.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "library",
+    "template"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "c8": "^10.1.3",
+    "happy-dom": "^20.0.8",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./build/tests",
+    "rootDir": "./src",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "removeComments": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build/tests",
+    "build/browser-tests"
+  ]
+}
