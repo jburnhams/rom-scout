@@ -23,7 +23,8 @@
       <h2>Interactive Demo</h2>
       <p>
         This page demonstrates the rom-scout library with interactive examples.
-        Each example includes runnable code that you can test with the included Pac-Man ROM file.
+        Each example includes runnable code that you can test with the included ROM files:
+        <strong>Pac-Man</strong> (Arcade) and <strong>Sonic the Hedgehog</strong> (Master System).
       </p>
       <p>
         <strong>Installation:</strong> <code>npm install rom-scout</code>
@@ -60,8 +61,14 @@ console.log('CRC32:', hashes.crc32);</code></pre>
       </div>
 
       <div class="demo-area">
-        <div class="file-info">
-          <strong>Test File:</strong> pacman.zip
+        <div class="file-info" data-result="result-hash">
+          <label>
+            <strong>Select ROM:</strong>
+            <select class="rom-select">
+              <option value="pacman">Pac-Man (pacman.zip)</option>
+              <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
+            </select>
+          </label>
         </div>
         <div id="result-hash" class="result"></div>
       </div>
@@ -127,8 +134,14 @@ if (metadata) {
             your own instance.
           </div>
         </div>
-        <div class="file-info">
-          <strong>Test File:</strong> pacman.zip
+        <div class="file-info" data-result="result-hasheous">
+          <label>
+            <strong>Select ROM:</strong>
+            <select class="rom-select">
+              <option value="pacman">Pac-Man (pacman.zip)</option>
+              <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
+            </select>
+          </label>
         </div>
         <div id="result-hasheous" class="result"></div>
       </div>
@@ -198,8 +211,14 @@ if (metadata) {
             Get credentials at <a href="https://api-docs.igdb.com/" target="_blank">IGDB API docs</a>.
           </div>
         </div>
-        <div class="file-info">
-          <strong>Test File:</strong> pacman.zip
+        <div class="file-info" data-result="result-igdb">
+          <label>
+            <strong>Select ROM:</strong>
+            <select class="rom-select">
+              <option value="pacman">Pac-Man (pacman.zip)</option>
+              <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
+            </select>
+          </label>
         </div>
         <div id="result-igdb" class="result"></div>
       </div>
@@ -292,8 +311,14 @@ if (metadata) {
             to get developer credentials.
           </div>
         </div>
-        <div class="file-info">
-          <strong>Test File:</strong> pacman.zip
+        <div class="file-info" data-result="result-screenscraper">
+          <label>
+            <strong>Select ROM:</strong>
+            <select class="rom-select">
+              <option value="pacman">Pac-Man (pacman.zip)</option>
+              <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
+            </select>
+          </label>
         </div>
         <div id="result-screenscraper" class="result"></div>
       </div>

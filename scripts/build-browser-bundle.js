@@ -94,8 +94,36 @@ function copyEsmBundle() {
   }
 }
 
+function copyRomFiles() {
+  console.log('Copying ROM files for documentation demos...');
+  const romsDir = path.join(projectRoot, 'roms');
+
+  if (!fs.existsSync(romsDir)) {
+    console.warn('ROM files directory not found; skipping.');
+    return;
+  }
+
+  const romFiles = fs.readdirSync(romsDir).filter(file => {
+    const ext = path.extname(file).toLowerCase();
+    return ['.bin', '.zip', '.rom', '.nes', '.smc', '.sfc', '.gen', '.sms', '.gb', '.gbc', '.gba'].includes(ext);
+  });
+
+  if (romFiles.length === 0) {
+    console.warn('No ROM files found in roms/ directory.');
+    return;
+  }
+
+  for (const file of romFiles) {
+    const srcPath = path.join(romsDir, file);
+    const destPath = path.join(docsDistDir, file);
+    fs.copyFileSync(srcPath, destPath);
+    console.log(`  Copied ${file}`);
+  }
+}
+
 copyDocs();
 copyBrowserBundles();
 copyEsmBundle();
+copyRomFiles();
 
 console.log('Documentation assets ready in docs-dist/.');
