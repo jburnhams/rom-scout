@@ -144,7 +144,8 @@ describe('Integration Tests - Documentation Examples', () => {
           assert.strictEqual(metadata.source, 'hasheous');
           assert.ok(metadata.title, 'Title should be present');
         } else {
-          console.log('\nHasheous API: Pac-Man ROM not found in database');
+          // Pac-Man ROM is not expected to be in Hasheous database
+          console.log('\nHasheous API: Pac-Man ROM not found in database (as expected)');
         }
       } catch (error) {
         // Network errors are expected in restricted environments
@@ -152,7 +153,8 @@ describe('Integration Tests - Documentation Examples', () => {
           error.message.includes('fetch failed') ||
           error.message.includes('ENOTFOUND') ||
           error.message.includes('ECONNREFUSED') ||
-          error.message.includes('timed out')
+          error.message.includes('timed out') ||
+          error.message.includes('EAI_AGAIN')
         )) {
           console.log('\nHasheous API: Network access blocked or unavailable');
           console.log('  (This is expected in restricted test environments)');
@@ -176,23 +178,82 @@ describe('Integration Tests - Documentation Examples', () => {
       try {
         const metadata = await scout.identify(sonicBuffer, 'sonic.bin');
 
+        // Sonic the Hedgehog should be found in Hasheous
+        assert.ok(metadata, 'Sonic the Hedgehog should be found in Hasheous database');
+
         if (metadata) {
           console.log('\nHasheous API Results (Sonic the Hedgehog):');
-          console.log('  Title:', metadata.title);
-          console.log('  Platform:', metadata.platform);
-          console.log('  Year:', metadata.year);
-          console.log('  Publisher:', metadata.publisher);
-          console.log('  Developer:', metadata.developer);
-          console.log('  Source:', metadata.source);
+          console.log(JSON.stringify(metadata, null, 2));
 
-          assert.strictEqual(metadata.source, 'hasheous');
+          // Verify source
+          assert.strictEqual(metadata.source, 'hasheous', 'Source should be hasheous');
+
+          // Verify title - Hasheous v1 API provides this
           assert.ok(metadata.title, 'Title should be present');
+          assert.strictEqual(
+            metadata.title,
+            'Sonic the Hedgehog',
+            `Title should be "Sonic the Hedgehog", got: ${metadata.title}`
+          );
 
-          // Sonic the Hedgehog is expected to be found in Hasheous
-          console.log('  ✓ Sonic the Hedgehog successfully identified via Hasheous');
-        } else {
-          console.log('\nHasheous API: Sonic ROM not found in database');
-          console.log('  (Note: Sonic the Hedgehog for Master System is expected to be in the database)');
+          // Verify platform - Hasheous v1 API provides this
+          assert.ok(metadata.platform, 'Platform should be present');
+          assert.strictEqual(
+            metadata.platform,
+            'Sega Master System',
+            `Platform should be "Sega Master System", got: ${metadata.platform}`
+          );
+
+          // Verify publisher - Hasheous v1 API provides this
+          assert.ok(metadata.publisher, 'Publisher should be present');
+          assert.strictEqual(
+            metadata.publisher,
+            'Sega',
+            `Publisher should be "Sega", got: ${metadata.publisher}`
+          );
+
+          // Check for images - Hasheous v1 API provides logo and other images in attributes
+          if (metadata.images && metadata.images.length > 0) {
+            console.log(`\n  Found ${metadata.images.length} image(s):`);
+
+            for (const image of metadata.images) {
+              console.log(`    - Type: ${image.type}, URL: ${image.url}`);
+
+              // Verify image structure
+              assert.ok(image.url, 'Image URL should be present');
+              assert.ok(image.type, 'Image type should be present');
+              assert.ok(
+                typeof image.url === 'string' && image.url.length > 0,
+                'Image URL should be a non-empty string'
+              );
+
+              // Verify URL format (should be either full URL or path to /api/v1/images/)
+              assert.ok(
+                image.url.includes('http') || image.url.includes('/api/v1/images/'),
+                `Image URL should be valid, got: ${image.url}`
+              );
+            }
+
+            // Verify we have at least one logo image
+            const hasLogo = metadata.images.some(img =>
+              img.type === 'logo' ||
+              img.type.toLowerCase().includes('logo')
+            );
+
+            assert.ok(hasLogo, 'Should have at least one logo image');
+            console.log('  ✓ Logo image found');
+          } else {
+            // Images should be present for Sonic
+            console.log('  Warning: No images found in response');
+          }
+
+          // Note: Hasheous v1 /api/v1/Lookup/ByHash endpoint does not directly provide:
+          // - year, developer, description, genres, players, rating
+          // These would need to be fetched from the metadata sources (IGDB, TheGamesDB, etc.)
+          // using the metadata IDs provided in the raw response
+
+          console.log('\n  ✓ Sonic the Hedgehog successfully identified via Hasheous');
+          console.log('  ✓ Title, platform, publisher, and images verified');
         }
       } catch (error) {
         // Network errors are expected in restricted environments
@@ -200,7 +261,8 @@ describe('Integration Tests - Documentation Examples', () => {
           error.message.includes('fetch failed') ||
           error.message.includes('ENOTFOUND') ||
           error.message.includes('ECONNREFUSED') ||
-          error.message.includes('timed out')
+          error.message.includes('timed out') ||
+          error.message.includes('EAI_AGAIN')
         )) {
           console.log('\nHasheous API: Network access blocked or unavailable');
           console.log('  (This is expected in restricted test environments)');

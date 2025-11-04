@@ -27,26 +27,26 @@ export class HasheousClient {
    */
   async lookup(request: HashLookupRequest): Promise<RomMetadata | null> {
     try {
-      // Build query parameters
-      const params = new URLSearchParams();
+      // Build request body for Hasheous v1 API
+      const requestBody: any = {};
 
-      if (request.md5) params.append('md5', request.md5);
-      if (request.sha1) params.append('sha1', request.sha1);
-      if (request.crc32) params.append('crc32', request.crc32);
-      if (request.size) params.append('size', request.size.toString());
-      if (request.filename) params.append('filename', request.filename);
+      if (request.md5) requestBody.mD5 = request.md5;
+      if (request.sha1) requestBody.shA1 = request.sha1;
+      if (request.crc32) requestBody.crc = request.crc32;
 
-      const url = `${this.baseUrl}/api/lookup?${params.toString()}`;
+      const url = `${this.baseUrl}/api/v1/Lookup/ByHash`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
       try {
         const response = await fetch(url, {
-          method: 'GET',
+          method: 'POST',
           headers: {
             'Accept': 'application/json',
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
 
@@ -81,44 +81,37 @@ export class HasheousClient {
   private transformResponse(data: any): RomMetadata {
     const images: ImageMetadata[] = [];
 
-    // Extract images from various possible fields
-    if (data.images) {
-      for (const img of data.images) {
-        images.push({
-          url: img.url || img.path,
-          type: img.type || 'unknown',
-          resolution: img.resolution,
-          thumbnail: img.thumbnail,
-        });
+    // Extract images from attributes
+    if (data.attributes && Array.isArray(data.attributes)) {
+      for (const attr of data.attributes) {
+        if (attr.attributeType === 'ImageId' && attr.link) {
+          // Construct full image URL
+          const imageUrl = attr.link.startsWith('http')
+            ? attr.link
+            : `${this.baseUrl}${attr.link}`;
+
+          images.push({
+            url: imageUrl,
+            type: attr.attributeName?.toLowerCase() || 'unknown',
+            thumbnail: attr.thumbnail,
+          });
+        }
       }
     }
 
-    // Also check for direct image fields
-    if (data.boxart) {
-      images.push({
-        url: data.boxart,
-        type: 'boxart',
-      });
-    }
-
-    if (data.cover) {
-      images.push({
-        url: data.cover,
-        type: 'cover',
-      });
-    }
-
     return {
-      title: data.title || data.name || 'Unknown',
-      platform: data.platform || data.system,
-      year: data.year || data.releaseYear,
-      publisher: data.publisher,
-      developer: data.developer,
-      description: data.description || data.synopsis,
-      genres: data.genres || (data.genre ? [data.genre] : undefined),
-      players: data.players,
+      title: data.name || 'Unknown',
+      platform: data.platform?.name,
+      publisher: data.publisher?.name,
+      // Note: Hasheous v1 API doesn't directly provide these fields
+      // They would need to be fetched from the metadata sources
+      year: undefined,
+      developer: undefined,
+      description: undefined,
+      genres: undefined,
+      players: undefined,
       images: images.length > 0 ? images : undefined,
-      rating: data.rating,
+      rating: undefined,
       source: 'hasheous',
       raw: data,
     };
