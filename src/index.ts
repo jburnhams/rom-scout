@@ -1,46 +1,45 @@
 /**
- * A simple hello world library
+ * rom-scout - ROM identification and metadata fetching library
+ *
+ * A JavaScript library that identifies emulator ROM files by calculating hashes
+ * and fetching metadata from various APIs including Hasheous, IGDB, and ScreenScraper.
+ *
+ * @example
+ * ```typescript
+ * import { RomScout } from 'rom-scout';
+ *
+ * // Create a scout instance
+ * const scout = new RomScout({
+ *   provider: 'hasheous',
+ *   hasheousUrl: 'https://hasheous.example.com'
+ * });
+ *
+ * // Identify a ROM file
+ * const file = fileInput.files[0];
+ * const metadata = await scout.identify(file);
+ * console.log(metadata.title); // Game title
+ * console.log(metadata.images); // Cover art and screenshots
+ * ```
+ *
+ * @packageDocumentation
  */
 
-/**
- * Returns a greeting message
- * @param name - The name to greet (defaults to 'World')
- * @returns A greeting message
- */
-export function hello(name: string = 'World'): string {
-  return `Hello, ${name}!`;
-}
+// Main class
+export { RomScout } from './rom-scout.js';
 
-/**
- * Returns a goodbye message
- * @param name - The name to say goodbye to (defaults to 'World')
- * @returns A goodbye message
- */
-export function goodbye(name: string = 'World'): string {
-  return `Goodbye, ${name}!`;
-}
+// Hash utilities
+export { calculateHash, calculateSingleHash } from './hash.js';
+export type { HashType, HashResult } from './hash.js';
 
-/**
- * A simple greeter class
- */
-export class Greeter {
-  private name: string;
+// API clients
+export { HasheousClient } from './api/hasheous.js';
+export { IGDBClient } from './api/igdb.js';
+export { ScreenScraperClient } from './api/screenscraper.js';
 
-  constructor(name: string) {
-    this.name = name;
-  }
-
-  /**
-   * Greets with the configured name
-   */
-  greet(): string {
-    return hello(this.name);
-  }
-
-  /**
-   * Says goodbye with the configured name
-   */
-  farewell(): string {
-    return goodbye(this.name);
-  }
-}
+// Types
+export type {
+  RomScoutConfig,
+  RomMetadata,
+  ImageMetadata,
+  HashLookupRequest,
+} from './types.js';
