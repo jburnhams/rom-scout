@@ -6,6 +6,7 @@ import { calculateHash } from './hash.js';
 import { HasheousClient } from './api/hasheous.js';
 import { IGDBClient } from './api/igdb.js';
 import { ScreenScraperClient } from './api/screenscraper.js';
+import { isZipArchive, isArchiveFilename, extractZipFiles } from './archive.js';
 import type {
   RomScoutConfig,
   RomMetadata,
@@ -113,7 +114,48 @@ export class RomScout {
       buffer = data;
     }
 
-    // Calculate hashes
+    // Convert to Uint8Array for archive detection
+    let uint8Data: Uint8Array;
+    if (buffer instanceof ArrayBuffer) {
+      uint8Data = new Uint8Array(buffer);
+    } else if (buffer instanceof Uint8Array || Buffer.isBuffer(buffer)) {
+      uint8Data = buffer;
+    } else {
+      throw new Error('Data must be Uint8Array, ArrayBuffer, or Buffer');
+    }
+
+    // Check if this is an archive file
+    const isArchive = isArchiveFilename(filename) || isZipArchive(uint8Data);
+
+    if (isArchive && isZipArchive(uint8Data)) {
+      // Extract files from the archive
+      const extractedFiles = extractZipFiles(uint8Data);
+
+      // Try to identify each file in the archive
+      for (const file of extractedFiles) {
+        const hashes = await calculateHash(file.data);
+
+        const request: HashLookupRequest = {
+          md5: hashes.md5,
+          sha1: hashes.sha1,
+          crc32: hashes.crc32,
+          size: file.data.byteLength,
+          filename: file.name,
+        };
+
+        const metadata = await this.lookup(request);
+
+        // Return the first match found
+        if (metadata) {
+          return metadata;
+        }
+      }
+
+      // No matches found in archive files
+      return null;
+    }
+
+    // Not an archive, or couldn't extract - hash the whole file
     const hashes = await calculateHash(buffer);
 
     // Create lookup request
