@@ -1,0 +1,348 @@
+/**
+ * Interactive demo for rom-scout library
+ */
+
+// Import the library
+// Try local build first (for GitHub Pages), fallback to unpkg
+let RomScout;
+try {
+  // Local build (copied by build-browser-bundle.js)
+  const module = await import('./rom-scout.esm.js');
+  RomScout = module.RomScout;
+  console.log('Loaded rom-scout from local build');
+} catch (error) {
+  // Fallback to unpkg if local build not available
+  console.log('Local build not found, loading from unpkg...');
+  const module = await import('https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js');
+  RomScout = module.RomScout;
+  console.log('Loaded rom-scout from unpkg');
+}
+
+// Global state
+let pacmanFile = null;
+
+/**
+ * Load the pacman.zip file
+ */
+async function loadPacmanFile() {
+  try {
+    const response = await fetch('pacman.zip');
+    if (!response.ok) {
+      throw new Error('Failed to load pacman.zip');
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    // Create a File-like object
+    pacmanFile = new File([arrayBuffer], 'pacman.zip', { type: 'application/zip' });
+    console.log('Loaded pacman.zip:', pacmanFile.size, 'bytes');
+  } catch (error) {
+    console.error('Error loading pacman.zip:', error);
+    showError('Failed to load test ROM file');
+  }
+}
+
+/**
+ * Show loading state in result area
+ */
+function showLoading(resultId) {
+  const resultEl = document.getElementById(resultId);
+  resultEl.className = 'result loading';
+  resultEl.innerHTML = '<span class="spinner"></span> Processing...';
+}
+
+/**
+ * Show success result
+ */
+function showSuccess(resultId, content) {
+  const resultEl = document.getElementById(resultId);
+  resultEl.className = 'result success';
+  resultEl.innerHTML = content;
+}
+
+/**
+ * Show error result
+ */
+function showError(resultId, error) {
+  const resultEl = document.getElementById(resultId);
+  resultEl.className = 'result error';
+  const message = error instanceof Error ? error.message : String(error);
+  resultEl.innerHTML = `<strong>Error:</strong> ${escapeHtml(message)}`;
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Format hash results as HTML
+ */
+function formatHashResult(hashes) {
+  return `
+    <div class="result-title">Hash Calculation Results</div>
+    <div class="result-field"><strong>MD5:</strong> ${hashes.md5}</div>
+    <div class="result-field"><strong>SHA-1:</strong> ${hashes.sha1}</div>
+    <div class="result-field"><strong>CRC32:</strong> ${hashes.crc32}</div>
+    <div class="result-field" style="margin-top: 1rem; color: #059669;">
+      ✓ Hashes calculated successfully
+    </div>
+  `;
+}
+
+/**
+ * Format metadata results as HTML
+ */
+function formatMetadataResult(metadata) {
+  if (!metadata) {
+    return `
+      <div class="result-title">No Results Found</div>
+      <p>The ROM was not found in the database.</p>
+    `;
+  }
+
+  let html = `<div class="result-title">${escapeHtml(metadata.title)}</div>`;
+
+  if (metadata.platform) {
+    html += `<div class="result-field"><strong>Platform:</strong> ${escapeHtml(metadata.platform)}</div>`;
+  }
+
+  if (metadata.year) {
+    html += `<div class="result-field"><strong>Year:</strong> ${metadata.year}</div>`;
+  }
+
+  if (metadata.publisher) {
+    html += `<div class="result-field"><strong>Publisher:</strong> ${escapeHtml(metadata.publisher)}</div>`;
+  }
+
+  if (metadata.developer) {
+    html += `<div class="result-field"><strong>Developer:</strong> ${escapeHtml(metadata.developer)}</div>`;
+  }
+
+  if (metadata.genres && metadata.genres.length > 0) {
+    html += `<div class="result-field"><strong>Genres:</strong> ${metadata.genres.map(escapeHtml).join(', ')}</div>`;
+  }
+
+  if (metadata.players) {
+    html += `<div class="result-field"><strong>Players:</strong> ${escapeHtml(metadata.players)}</div>`;
+  }
+
+  if (metadata.rating) {
+    html += `<div class="result-field"><strong>Rating:</strong> ${metadata.rating}/100</div>`;
+  }
+
+  if (metadata.description) {
+    const truncated = metadata.description.length > 200
+      ? metadata.description.substring(0, 200) + '...'
+      : metadata.description;
+    html += `<div class="result-field" style="margin-top: 0.5rem;"><strong>Description:</strong><br>${escapeHtml(truncated)}</div>`;
+  }
+
+  html += `<div class="result-field" style="margin-top: 1rem; color: #6b7280;"><strong>Source:</strong> ${escapeHtml(metadata.source)}</div>`;
+
+  // Display images if available
+  if (metadata.images && metadata.images.length > 0) {
+    html += '<div class="result-images">';
+    for (const image of metadata.images.slice(0, 3)) {
+      html += `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.type)}" class="result-image" />`;
+    }
+    html += '</div>';
+  }
+
+  return html;
+}
+
+/**
+ * Example 1: Calculate hashes
+ */
+async function runHashExample() {
+  if (!pacmanFile) {
+    showError('result-hash', 'Pac-Man ROM file not loaded');
+    return;
+  }
+
+  showLoading('result-hash');
+
+  try {
+    const scout = new RomScout();
+    const hashes = await scout.hash(pacmanFile);
+
+    console.log('Hash results:', hashes);
+    showSuccess('result-hash', formatHashResult(hashes));
+  } catch (error) {
+    console.error('Hash calculation error:', error);
+    showError('result-hash', error);
+  }
+}
+
+/**
+ * Example 2: Hasheous API
+ */
+async function runHasheousExample() {
+  if (!pacmanFile) {
+    showError('result-hasheous', 'Pac-Man ROM file not loaded');
+    return;
+  }
+
+  const hasheousUrl = document.getElementById('hasheous-url').value.trim();
+  if (!hasheousUrl) {
+    showError('result-hasheous', 'Please enter a Hasheous URL');
+    return;
+  }
+
+  showLoading('result-hasheous');
+
+  try {
+    const scout = new RomScout({
+      provider: 'hasheous',
+      hasheousUrl: hasheousUrl
+    });
+
+    const metadata = await scout.identify(pacmanFile);
+
+    console.log('Hasheous result:', metadata);
+    showSuccess('result-hasheous', formatMetadataResult(metadata));
+  } catch (error) {
+    console.error('Hasheous API error:', error);
+    showError('result-hasheous', error);
+  }
+}
+
+/**
+ * Example 3: IGDB API
+ */
+async function runIgdbExample() {
+  if (!pacmanFile) {
+    showError('result-igdb', 'Pac-Man ROM file not loaded');
+    return;
+  }
+
+  const clientId = document.getElementById('igdb-client-id').value.trim();
+  const clientSecret = document.getElementById('igdb-client-secret').value.trim();
+
+  if (!clientId || !clientSecret) {
+    showError('result-igdb', 'Please enter both Client ID and Client Secret');
+    return;
+  }
+
+  showLoading('result-igdb');
+
+  try {
+    const scout = new RomScout({
+      provider: 'igdb',
+      igdb: {
+        clientId: clientId,
+        clientSecret: clientSecret
+      }
+    });
+
+    const metadata = await scout.identify(pacmanFile);
+
+    console.log('IGDB result:', metadata);
+    showSuccess('result-igdb', formatMetadataResult(metadata));
+  } catch (error) {
+    console.error('IGDB API error:', error);
+    showError('result-igdb', error);
+  }
+}
+
+/**
+ * Example 4: ScreenScraper API
+ */
+async function runScreenScraperExample() {
+  if (!pacmanFile) {
+    showError('result-screenscraper', 'Pac-Man ROM file not loaded');
+    return;
+  }
+
+  const devId = document.getElementById('ss-dev-id').value.trim();
+  const devPassword = document.getElementById('ss-dev-password').value.trim();
+  const username = document.getElementById('ss-username').value.trim();
+  const password = document.getElementById('ss-password').value.trim();
+
+  if (!devId || !devPassword) {
+    showError('result-screenscraper', 'Please enter both Dev ID and Dev Password');
+    return;
+  }
+
+  showLoading('result-screenscraper');
+
+  try {
+    const config = {
+      provider: 'screenscraper',
+      screenscraper: {
+        devId: devId,
+        devPassword: devPassword,
+        softwareName: 'rom-scout-demo'
+      }
+    };
+
+    // Add optional credentials if provided
+    if (username) config.screenscraper.username = username;
+    if (password) config.screenscraper.password = password;
+
+    const scout = new RomScout(config);
+    const metadata = await scout.identify(pacmanFile);
+
+    console.log('ScreenScraper result:', metadata);
+    showSuccess('result-screenscraper', formatMetadataResult(metadata));
+  } catch (error) {
+    console.error('ScreenScraper API error:', error);
+    showError('result-screenscraper', error);
+  }
+}
+
+/**
+ * Initialize the demo
+ */
+async function init() {
+  console.log('Initializing rom-scout demo...');
+
+  // Load the test ROM file
+  await loadPacmanFile();
+
+  // Set up event listeners for run buttons
+  const runButtons = document.querySelectorAll('.run-btn');
+  runButtons.forEach(button => {
+    button.addEventListener('click', async (e) => {
+      const example = e.target.dataset.example;
+      console.log('Running example:', example);
+
+      // Disable button during execution
+      button.disabled = true;
+
+      try {
+        switch (example) {
+          case 'hash':
+            await runHashExample();
+            break;
+          case 'hasheous':
+            await runHasheousExample();
+            break;
+          case 'igdb':
+            await runIgdbExample();
+            break;
+          case 'screenscraper':
+            await runScreenScraperExample();
+            break;
+          default:
+            console.error('Unknown example:', example);
+        }
+      } finally {
+        // Re-enable button
+        button.disabled = false;
+      }
+    });
+  });
+
+  console.log('Demo initialized successfully');
+}
+
+// Run initialization when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

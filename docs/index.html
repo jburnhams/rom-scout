@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rom-scout - Interactive Demo & Documentation</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>rom-scout</h1>
+      <p class="tagline">ROM identification and metadata fetching library</p>
+      <div class="links">
+        <a href="https://github.com/jburnhams/rom-scout" target="_blank">GitHub</a>
+        <a href="https://www.npmjs.com/package/rom-scout" target="_blank">npm</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="intro">
+      <h2>Interactive Demo</h2>
+      <p>
+        This page demonstrates the rom-scout library with interactive examples.
+        Each example includes runnable code that you can test with the included Pac-Man ROM file.
+      </p>
+      <p>
+        <strong>Installation:</strong> <code>npm install rom-scout</code>
+      </p>
+    </section>
+
+    <!-- Example 1: Hash Calculation -->
+    <section class="example">
+      <h3>1. Calculate ROM Hashes</h3>
+      <p>
+        Calculate MD5, SHA-1, and CRC32 hashes for any ROM file. This works entirely client-side without any API calls.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span>JavaScript</span>
+          <button class="run-btn" data-example="hash">Run Example</button>
+        </div>
+        <pre><code>import { RomScout } from 'rom-scout';
+
+// Create a scout instance (no API needed for hashing)
+const scout = new RomScout();
+
+// Load a ROM file (in browser from file input)
+const fileInput = document.getElementById('rom-file');
+const file = fileInput.files[0];
+
+// Calculate hashes
+const hashes = await scout.hash(file);
+
+console.log('MD5:', hashes.md5);
+console.log('SHA-1:', hashes.sha1);
+console.log('CRC32:', hashes.crc32);</code></pre>
+      </div>
+
+      <div class="demo-area">
+        <div class="file-info">
+          <strong>Test File:</strong> pacman.zip
+        </div>
+        <div id="result-hash" class="result"></div>
+      </div>
+    </section>
+
+    <!-- Example 2: Hasheous API -->
+    <section class="example">
+      <h3>2. Hasheous API - Hash-based Lookup</h3>
+      <p>
+        Fetch metadata from a Hasheous server using ROM hashes.
+        <a href="https://github.com/Hasheous/Hasheous" target="_blank">Hasheous</a> is an open-source ROM metadata server.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span>JavaScript</span>
+          <button class="run-btn" data-example="hasheous">Run Example</button>
+        </div>
+        <pre><code>import { RomScout } from 'rom-scout';
+
+// Create a scout instance with Hasheous
+const scout = new RomScout({
+  provider: 'hasheous',
+  hasheousUrl: 'https://your-hasheous-instance.com'
+});
+
+// Load a ROM file
+const file = document.getElementById('rom-file').files[0];
+
+// Identify the ROM and fetch metadata
+const metadata = await scout.identify(file);
+
+if (metadata) {
+  console.log('Title:', metadata.title);
+  console.log('Platform:', metadata.platform);
+  console.log('Year:', metadata.year);
+  console.log('Publisher:', metadata.publisher);
+  console.log('Description:', metadata.description);
+
+  // Display cover art if available
+  if (metadata.images && metadata.images.length > 0) {
+    console.log('Cover:', metadata.images[0].url);
+  }
+}</code></pre>
+      </div>
+
+      <div class="demo-area">
+        <div class="api-config">
+          <label>
+            Hasheous URL:
+            <input
+              type="text"
+              id="hasheous-url"
+              value="https://hasheous.org"
+              placeholder="https://hasheous.org"
+              class="api-input"
+            >
+          </label>
+          <div class="config-note">
+            <strong>Note:</strong> Using the free public instance at
+            <a href="https://hasheous.org" target="_blank">hasheous.org</a>.
+            You can also <a href="https://github.com/gaseous-project/hasheous" target="_blank">self-host</a>
+            your own instance.
+          </div>
+        </div>
+        <div class="file-info">
+          <strong>Test File:</strong> pacman.zip
+        </div>
+        <div id="result-hasheous" class="result"></div>
+      </div>
+    </section>
+
+    <!-- Example 3: IGDB API -->
+    <section class="example">
+      <h3>3. IGDB API - Filename-based Lookup</h3>
+      <p>
+        Fetch metadata from IGDB (Internet Game Database). Requires API credentials from
+        <a href="https://api-docs.igdb.com/" target="_blank">IGDB</a>.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span>JavaScript</span>
+          <button class="run-btn" data-example="igdb">Run Example</button>
+        </div>
+        <pre><code>import { RomScout } from 'rom-scout';
+
+// Create a scout instance with IGDB
+const scout = new RomScout({
+  provider: 'igdb',
+  igdb: {
+    clientId: 'your-client-id',
+    clientSecret: 'your-client-secret'
+  }
+});
+
+// Load a ROM file
+const file = document.getElementById('rom-file').files[0];
+
+// Identify the ROM (IGDB uses filename matching)
+const metadata = await scout.identify(file);
+
+if (metadata) {
+  console.log('Title:', metadata.title);
+  console.log('Platform:', metadata.platform);
+  console.log('Year:', metadata.year);
+  console.log('Genres:', metadata.genres);
+  console.log('Rating:', metadata.rating);
+}</code></pre>
+      </div>
+
+      <div class="demo-area">
+        <div class="api-config">
+          <label>
+            Client ID:
+            <input
+              type="text"
+              id="igdb-client-id"
+              placeholder="your-client-id"
+              class="api-input"
+            >
+          </label>
+          <label>
+            Client Secret:
+            <input
+              type="password"
+              id="igdb-client-secret"
+              placeholder="your-client-secret"
+              class="api-input"
+            >
+          </label>
+          <div class="config-note">
+            <strong>Note:</strong> IGDB uses filename-based matching, not hash-based lookup.
+            Get credentials at <a href="https://api-docs.igdb.com/" target="_blank">IGDB API docs</a>.
+          </div>
+        </div>
+        <div class="file-info">
+          <strong>Test File:</strong> pacman.zip
+        </div>
+        <div id="result-igdb" class="result"></div>
+      </div>
+    </section>
+
+    <!-- Example 4: ScreenScraper API -->
+    <section class="example">
+      <h3>4. ScreenScraper API - Multi-hash Lookup</h3>
+      <p>
+        Fetch metadata from ScreenScraper. Requires developer credentials from
+        <a href="https://www.screenscraper.fr/" target="_blank">ScreenScraper</a>.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span>JavaScript</span>
+          <button class="run-btn" data-example="screenscraper">Run Example</button>
+        </div>
+        <pre><code>import { RomScout } from 'rom-scout';
+
+// Create a scout instance with ScreenScraper
+const scout = new RomScout({
+  provider: 'screenscraper',
+  screenscraper: {
+    devId: 'your-dev-id',
+    devPassword: 'your-dev-password',
+    softwareName: 'rom-scout-demo',
+    username: 'optional-username',  // optional
+    password: 'optional-password'   // optional
+  }
+});
+
+// Load a ROM file
+const file = document.getElementById('rom-file').files[0];
+
+// Identify the ROM
+const metadata = await scout.identify(file);
+
+if (metadata) {
+  console.log('Title:', metadata.title);
+  console.log('Platform:', metadata.platform);
+  console.log('Year:', metadata.year);
+  console.log('Publisher:', metadata.publisher);
+  console.log('Developer:', metadata.developer);
+  console.log('Genres:', metadata.genres);
+}</code></pre>
+      </div>
+
+      <div class="demo-area">
+        <div class="api-config">
+          <label>
+            Dev ID:
+            <input
+              type="text"
+              id="ss-dev-id"
+              placeholder="your-dev-id"
+              class="api-input"
+            >
+          </label>
+          <label>
+            Dev Password:
+            <input
+              type="password"
+              id="ss-dev-password"
+              placeholder="your-dev-password"
+              class="api-input"
+            >
+          </label>
+          <label>
+            Username (optional):
+            <input
+              type="text"
+              id="ss-username"
+              placeholder="optional-username"
+              class="api-input"
+            >
+          </label>
+          <label>
+            Password (optional):
+            <input
+              type="password"
+              id="ss-password"
+              placeholder="optional-password"
+              class="api-input"
+            >
+          </label>
+          <div class="config-note">
+            <strong>Note:</strong> ScreenScraper supports multiple hash types for accurate matching.
+            Register at <a href="https://www.screenscraper.fr/" target="_blank">ScreenScraper</a>
+            to get developer credentials.
+          </div>
+        </div>
+        <div class="file-info">
+          <strong>Test File:</strong> pacman.zip
+        </div>
+        <div id="result-screenscraper" class="result"></div>
+      </div>
+    </section>
+
+    <!-- Example 5: Multiple Providers -->
+    <section class="example">
+      <h3>5. Try Multiple Providers</h3>
+      <p>
+        Automatically try multiple providers in sequence until metadata is found.
+        This is useful for fallback scenarios.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span>JavaScript</span>
+        </div>
+        <pre><code>import { RomScout } from 'rom-scout';
+
+// Configure multiple providers
+const scout = new RomScout({
+  hasheousUrl: 'https://your-hasheous-instance.com',
+  igdb: {
+    clientId: 'your-client-id',
+    clientSecret: 'your-client-secret'
+  },
+  screenscraper: {
+    devId: 'your-dev-id',
+    devPassword: 'your-dev-password',
+    softwareName: 'rom-scout-demo'
+  }
+});
+
+// Load a ROM file
+const file = document.getElementById('rom-file').files[0];
+
+// Calculate hashes first
+const hashes = await scout.hash(file);
+
+// Create lookup request
+const request = {
+  md5: hashes.md5,
+  sha1: hashes.sha1,
+  crc32: hashes.crc32,
+  filename: file.name
+};
+
+// Try providers in order: Hasheous, then IGDB, then ScreenScraper
+const metadata = await scout.lookupMultiple(
+  request,
+  ['hasheous', 'igdb', 'screenscraper']
+);
+
+if (metadata) {
+  console.log('Found in:', metadata.source);
+  console.log('Title:', metadata.title);
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- Installation & Usage -->
+    <section class="example">
+      <h3>Installation & Usage</h3>
+
+      <h4>Node.js / npm</h4>
+      <div class="code-block">
+        <pre><code>npm install rom-scout</code></pre>
+      </div>
+
+      <div class="code-block">
+        <pre><code>import { RomScout } from 'rom-scout';
+import { readFileSync } from 'fs';
+
+const scout = new RomScout({
+  provider: 'hasheous',
+  hasheousUrl: 'https://your-hasheous-instance.com'
+});
+
+const romData = readFileSync('pacman.zip');
+const metadata = await scout.identify(romData, 'pacman.zip');
+console.log(metadata);</code></pre>
+      </div>
+
+      <h4>Browser / CDN</h4>
+      <div class="code-block">
+        <pre><code>&lt;script type="module"&gt;
+  import { RomScout } from 'https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js';
+
+  const scout = new RomScout();
+  // Use scout...
+&lt;/script&gt;</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>
+        rom-scout is open source software licensed under MIT.
+        <a href="https://github.com/jburnhams/rom-scout" target="_blank">View on GitHub</a>
+      </p>
+    </div>
+  </footer>
+
+  <script type="module" src="demo.js"></script>
+</body>
+</html>
