@@ -13,6 +13,7 @@
     "node_modules",
     "dist",
     "build/tests",
-    "build/browser-tests"
+    "build/browser-tests",
+    "tests/browser.test.ts"
   ]
 }
