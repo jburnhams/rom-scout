@@ -132,6 +132,9 @@ export class RomScout {
       // Extract files from the archive
       const extractedFiles = extractZipFiles(uint8Data);
 
+      // Collect all matches and count how many files match each ROM
+      const matchCounts = new Map<string, { metadata: RomMetadata; count: number }>();
+
       // Try to identify each file in the archive
       for (const file of extractedFiles) {
         const hashes = await calculateHash(file.data);
@@ -146,10 +149,31 @@ export class RomScout {
 
         const metadata = await this.lookup(request);
 
-        // Return the first match found
         if (metadata) {
-          return metadata;
+          // Create a unique key for this ROM (use title + platform + publisher)
+          const romKey = `${metadata.title}|${metadata.platform || ''}|${metadata.publisher || ''}`;
+
+          if (matchCounts.has(romKey)) {
+            // Increment count for this ROM
+            matchCounts.get(romKey)!.count++;
+          } else {
+            // First match for this ROM
+            matchCounts.set(romKey, { metadata, count: 1 });
+          }
         }
+      }
+
+      // Return the ROM that matched the most files
+      if (matchCounts.size > 0) {
+        let bestMatch: { metadata: RomMetadata; count: number } | null = null;
+
+        for (const match of matchCounts.values()) {
+          if (!bestMatch || match.count > bestMatch.count) {
+            bestMatch = match;
+          }
+        }
+
+        return bestMatch!.metadata;
       }
 
       // No matches found in archive files
