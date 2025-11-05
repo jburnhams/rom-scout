@@ -2,20 +2,26 @@
  * Interactive demo for rom-scout library
  */
 
-// Import the library
-// Try local build first (for GitHub Pages), fallback to unpkg
+// Import the library from local build
 let RomScout;
 try {
-  // Local build (copied by build-browser-bundle.js)
   const module = await import('./rom-scout.esm.js');
   RomScout = module.RomScout;
   console.log('Loaded rom-scout from local build');
 } catch (error) {
-  // Fallback to unpkg if local build not available
-  console.log('Local build not found, loading from unpkg...');
-  const module = await import('https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js');
-  RomScout = module.RomScout;
-  console.log('Loaded rom-scout from unpkg');
+  console.error('Failed to load rom-scout library:', error);
+
+  // Show error on page
+  document.body.insertAdjacentHTML('afterbegin', `
+    <div style="background-color: #fee; border: 2px solid #c33; padding: 1rem; margin: 1rem; border-radius: 4px;">
+      <h3 style="color: #c33; margin-top: 0;">⚠️ Library Load Error</h3>
+      <p><strong>Failed to load rom-scout library:</strong></p>
+      <pre style="background: white; padding: 0.5rem; border-radius: 4px; overflow-x: auto;">${escapeHtml(error.message)}</pre>
+      <p style="margin-bottom: 0;">Please ensure the library is built. Run <code>npm run build:docs</code> to generate the required files.</p>
+    </div>
+  `);
+
+  throw error;
 }
 
 // Global state
@@ -353,50 +359,96 @@ async function runScreenScraperExample() {
  * Initialize the demo
  */
 async function init() {
-  console.log('Initializing rom-scout demo...');
+  try {
+    console.log('Initializing rom-scout demo...');
 
-  // Load the test ROM files
-  await Promise.all([
-    loadPacmanFile(),
-    loadSonicFile()
-  ]);
+    // Load the test ROM files
+    await Promise.all([
+      loadPacmanFile(),
+      loadSonicFile()
+    ]);
 
-  // Set up event listeners for run buttons
-  const runButtons = document.querySelectorAll('.run-btn');
-  runButtons.forEach(button => {
-    button.addEventListener('click', async (e) => {
-      const example = e.target.dataset.example;
-      console.log('Running example:', example);
+    // Set up event listeners for run buttons
+    const runButtons = document.querySelectorAll('.run-btn');
+    runButtons.forEach(button => {
+      button.addEventListener('click', async (e) => {
+        const example = e.target.dataset.example;
+        console.log('Running example:', example);
 
-      // Disable button during execution
-      button.disabled = true;
+        // Disable button during execution
+        button.disabled = true;
 
-      try {
-        switch (example) {
-          case 'hash':
-            await runHashExample();
-            break;
-          case 'hasheous':
-            await runHasheousExample();
-            break;
-          case 'igdb':
-            await runIgdbExample();
-            break;
-          case 'screenscraper':
-            await runScreenScraperExample();
-            break;
-          default:
-            console.error('Unknown example:', example);
+        try {
+          switch (example) {
+            case 'hash':
+              await runHashExample();
+              break;
+            case 'hasheous':
+              await runHasheousExample();
+              break;
+            case 'igdb':
+              await runIgdbExample();
+              break;
+            case 'screenscraper':
+              await runScreenScraperExample();
+              break;
+            default:
+              console.error('Unknown example:', example);
+          }
+        } catch (error) {
+          console.error(`Error running example ${example}:`, error);
+          // Error will be displayed in the result area by the individual example functions
+        } finally {
+          // Re-enable button
+          button.disabled = false;
         }
-      } finally {
-        // Re-enable button
-        button.disabled = false;
-      }
+      });
     });
-  });
 
-  console.log('Demo initialized successfully');
+    console.log('Demo initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize demo:', error);
+
+    // Show initialization error on page
+    document.body.insertAdjacentHTML('afterbegin', `
+      <div style="background-color: #fee; border: 2px solid #c33; padding: 1rem; margin: 1rem; border-radius: 4px;">
+        <h3 style="color: #c33; margin-top: 0;">⚠️ Initialization Error</h3>
+        <p><strong>Failed to initialize demo:</strong></p>
+        <pre style="background: white; padding: 0.5rem; border-radius: 4px; overflow-x: auto;">${escapeHtml(error.message)}</pre>
+      </div>
+    `);
+
+    throw error;
+  }
 }
+
+// Global error handler to catch and display unhandled errors
+window.addEventListener('error', (event) => {
+  console.error('Unhandled error:', event.error);
+
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = 'background-color: #fee; border: 2px solid #c33; padding: 1rem; margin: 1rem; border-radius: 4px; position: fixed; top: 10px; right: 10px; max-width: 400px; z-index: 9999; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+  errorDiv.innerHTML = `
+    <h3 style="color: #c33; margin-top: 0; font-size: 1rem;">⚠️ Error</h3>
+    <pre style="background: white; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; margin: 0;">${escapeHtml(event.error?.message || event.message || 'Unknown error')}</pre>
+    <button onclick="this.parentElement.remove()" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #c33; color: white; border: none; border-radius: 4px; cursor: pointer;">Dismiss</button>
+  `;
+  document.body.appendChild(errorDiv);
+});
+
+// Global promise rejection handler
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', event.reason);
+
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = 'background-color: #fee; border: 2px solid #c33; padding: 1rem; margin: 1rem; border-radius: 4px; position: fixed; top: 10px; right: 10px; max-width: 400px; z-index: 9999; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+  errorDiv.innerHTML = `
+    <h3 style="color: #c33; margin-top: 0; font-size: 1rem;">⚠️ Promise Rejection</h3>
+    <pre style="background: white; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; margin: 0;">${escapeHtml(event.reason?.message || String(event.reason) || 'Unknown error')}</pre>
+    <button onclick="this.parentElement.remove()" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #c33; color: white; border: none; border-radius: 4px; cursor: pointer;">Dismiss</button>
+  `;
+  document.body.appendChild(errorDiv);
+});
 
 // Run initialization when DOM is ready
 if (document.readyState === 'loading') {
