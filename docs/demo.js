@@ -227,7 +227,20 @@ async function runHashExample() {
  * Example 2: Hasheous API
  */
 async function runHasheousExample() {
-  const romFile = getSelectedRomFile('result-hasheous');
+  // Check if custom file is selected
+  const romSelect = document.getElementById('hasheous-rom-select');
+  let romFile;
+
+  if (romSelect && romSelect.value === 'custom') {
+    const fileInput = document.getElementById('hasheous-file-input');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      showError('result-hasheous', 'Please select a file');
+      return;
+    }
+    romFile = fileInput.files[0];
+  } else {
+    romFile = getSelectedRomFile('result-hasheous');
+  }
 
   if (!romFile) {
     showError('result-hasheous', 'ROM file not loaded');
@@ -367,6 +380,19 @@ async function init() {
       loadPacmanFile(),
       loadSonicFile()
     ]);
+
+    // Set up event listener for Hasheous ROM select
+    const hasheousRomSelect = document.getElementById('hasheous-rom-select');
+    const hasheousCustomFile = document.getElementById('hasheous-custom-file');
+    if (hasheousRomSelect && hasheousCustomFile) {
+      hasheousRomSelect.addEventListener('change', (e) => {
+        if (e.target.value === 'custom') {
+          hasheousCustomFile.style.display = 'block';
+        } else {
+          hasheousCustomFile.style.display = 'none';
+        }
+      });
+    }
 
     // Set up event listeners for run buttons
     const runButtons = document.querySelectorAll('.run-btn');

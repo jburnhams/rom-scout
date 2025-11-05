@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROM Player - rom-scout</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .rom-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .rom-card {
+      background: white;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 250px;
+      position: relative;
+    }
+
+    .rom-card:hover {
+      border-color: var(--primary-color);
+      box-shadow: 0 4px 6px rgba(37, 99, 235, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .rom-card.loading {
+      opacity: 0.6;
+    }
+
+    .rom-card.add-card {
+      border-style: dashed;
+      border-color: #9ca3af;
+      cursor: pointer;
+    }
+
+    .rom-card.add-card:hover {
+      border-color: var(--primary-color);
+      background: #eff6ff;
+    }
+
+    .rom-card.dragging-over {
+      border-color: var(--primary-color);
+      background: #eff6ff;
+    }
+
+    .rom-image {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-bottom: 0.75rem;
+      background: var(--code-bg);
+    }
+
+    .rom-placeholder {
+      width: 100%;
+      height: 150px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--code-bg);
+      border-radius: 4px;
+      margin-bottom: 0.75rem;
+      color: #9ca3af;
+      font-size: 3rem;
+    }
+
+    .rom-title {
+      font-weight: 600;
+      text-align: center;
+      color: var(--text-color);
+      font-size: 0.9rem;
+      word-wrap: break-word;
+      width: 100%;
+    }
+
+    .rom-platform {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 0.25rem;
+    }
+
+    .add-icon {
+      font-size: 3rem;
+      color: #9ca3af;
+      margin-bottom: 0.5rem;
+    }
+
+    .add-text {
+      color: #6b7280;
+      font-size: 0.875rem;
+      text-align: center;
+    }
+
+    .emulator-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .emulator-overlay.active {
+      display: flex;
+    }
+
+    .emulator-container {
+      position: relative;
+      width: 90%;
+      height: 90%;
+      max-width: 1200px;
+      max-height: 800px;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: -40px;
+      right: 0;
+      background: white;
+      color: var(--text-color);
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      z-index: 1001;
+    }
+
+    .close-btn:hover {
+      background: var(--border-color);
+    }
+
+    #emulator-div {
+      width: 100%;
+      height: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .file-input-hidden {
+      display: none;
+    }
+
+    .spinner-small {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid #e5e7eb;
+      border-top-color: var(--primary-color);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>ROM Player</h1>
+      <p class="tagline">Play your ROMs with automatic metadata fetching</p>
+      <div class="links">
+        <a href="index.html">Back to Examples</a>
+        <a href="https://github.com/jburnhams/rom-scout" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="intro">
+      <h2>Interactive ROM Player</h2>
+      <p>
+        This demo showcases rom-scout's ability to identify ROMs and fetch metadata, integrated with
+        <a href="https://emulatorjs.org/" target="_blank">EmulatorJS</a> for in-browser gameplay.
+        Click any ROM card to play. For ZIP files, the library automatically extracts the contents.
+      </p>
+      <p>
+        <strong>Note:</strong> Metadata is fetched from <a href="https://hasheous.org" target="_blank">hasheous.org</a>.
+        Drag and drop or click the "+" card to add your own ROMs!
+      </p>
+    </section>
+
+    <section>
+      <div class="rom-grid" id="rom-grid">
+        <!-- ROM cards will be dynamically added here -->
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>
+        rom-scout is open source software licensed under MIT.
+        <a href="https://github.com/jburnhams/rom-scout" target="_blank">View on GitHub</a>
+      </p>
+    </div>
+  </footer>
+
+  <!-- Emulator overlay -->
+  <div class="emulator-overlay" id="emulator-overlay">
+    <div class="emulator-container">
+      <button class="close-btn" id="close-emulator">Close Emulator</button>
+      <div id="emulator-div"></div>
+    </div>
+  </div>
+
+  <!-- Hidden file input -->
+  <input type="file" id="file-input" class="file-input-hidden" accept=".zip,.bin,.nes,.snes,.gba,.gb,.gbc,.smd,.md,.gen,.sms,.gg">
+
+  <!-- EmulatorJS -->
+  <script>
+    // EmulatorJS configuration
+    EJS_player = '#emulator-div';
+    EJS_gameUrl = ''; // Will be set dynamically
+    EJS_core = ''; // Will be set dynamically
+    EJS_pathtodata = 'https://cdn.jsdelivr.net/gh/EmulatorJS/EmulatorJS@latest/data/';
+  </script>
+  <script src="https://cdn.jsdelivr.net/gh/EmulatorJS/EmulatorJS@latest/data/loader.js"></script>
+
+  <script type="module" src="player.js"></script>
+</body>
+</html>
