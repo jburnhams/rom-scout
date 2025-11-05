@@ -12,6 +12,7 @@
       <h1>rom-scout</h1>
       <p class="tagline">ROM identification and metadata fetching library</p>
       <div class="links">
+        <a href="player.html">ROM Player Demo</a>
         <a href="https://github.com/jburnhams/rom-scout" target="_blank">GitHub</a>
         <a href="https://www.npmjs.com/package/rom-scout" target="_blank">npm</a>
       </div>
@@ -138,10 +139,15 @@ if (metadata) {
         <div class="file-info" data-result="result-hasheous">
           <label>
             <strong>Select ROM:</strong>
-            <select class="rom-select">
+            <select class="rom-select" id="hasheous-rom-select">
               <option value="pacman">Pac-Man (pacman.zip)</option>
               <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
+              <option value="custom">Custom File...</option>
             </select>
+          </label>
+          <label id="hasheous-custom-file" style="display: none; margin-top: 0.5rem;">
+            <strong>Choose your ROM file:</strong>
+            <input type="file" id="hasheous-file-input" accept=".zip,.bin,.nes,.snes,.gba,.gb,.gbc,.smd,.md,.gen,.sms,.gg" class="file-input">
           </label>
         </div>
         <div id="result-hasheous" class="result"></div>
