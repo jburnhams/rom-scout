@@ -10,6 +10,34 @@ A JavaScript/TypeScript library for identifying ROM files and fetching metadata 
 - **TypeScript**: Full TypeScript support with type definitions
 - **Multi-format**: Available as ESM, CommonJS, and browser bundles
 
+## TypeScript Support
+
+rom-scout includes full TypeScript definitions. All public types are exported so
+you can import them directly from the package:
+
+```typescript
+import {
+  RomScout,
+  RomMetadata,
+  ImageMetadata,
+  RomScoutConfig
+} from 'rom-scout';
+```
+
+When working with image metadata you can take advantage of the richer
+structure exposed by the `images` array. For example, to grab a game's box art
+you can filter by the `type` property:
+
+```typescript
+const metadata = await scout.identify(file);
+
+const boxArt = metadata?.images?.find((image) => image.type === 'boxart');
+const firstImage = metadata?.images?.[0];
+```
+
+The array shape allows you to store multiple images (box art, screenshots,
+title screens, etc.) alongside any metadata that accompanies each image.
+
 ## Installation
 
 ```bash
@@ -86,6 +114,19 @@ if (metadata.images) {
   }
 }
 ```
+
+## Browser Build Warnings
+
+rom-scout now detects the active runtime at execution time. When the Web Crypto
+API is available (including modern browsers and recent versions of Node.js) it
+is used automatically, preventing Node-specific modules from being bundled into
+browser builds. If your tooling still surfaces a warning such as:
+
+> Module "crypto" has been externalized for browser compatibility
+
+the message can usually be ignored. Alternatively, configure your bundler to
+externalize Node built-ins or provide a lightweight polyfill so that any
+remaining dynamic imports resolve cleanly in browser-only builds.
 
 ## API Providers
 
