@@ -224,12 +224,16 @@
   <!-- EmulatorJS -->
   <script>
     // EmulatorJS configuration
-    EJS_player = '#emulator-div';
-    EJS_gameUrl = ''; // Will be set dynamically
-    EJS_core = ''; // Will be set dynamically
-    EJS_pathtodata = 'https://cdn.jsdelivr.net/gh/EmulatorJS/EmulatorJS@latest/data/';
+    window.EJS_player = '#emulator-div';
+    window.EJS_gameUrl = ''; // Will be set dynamically
+    window.EJS_core = ''; // Will be set dynamically
+    window.EJS_biosUrl = '';
+    window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+    window.EJS_startOnLoaded = true;
+    window.EJS_disableDatabases = true;
+    window.EJS_threads = false;
   </script>
-  <script src="https://cdn.jsdelivr.net/gh/EmulatorJS/EmulatorJS@latest/data/loader.js"></script>
+  <script src="https://cdn.emulatorjs.org/stable/data/loader.js"></script>
 
   <script type="module" src="player.js"></script>
 </body>

@@ -4,6 +4,7 @@
 
 // Import the library from local build
 let RomScout, extractZipFiles;
+let activeLoaderScript = null;
 try {
   const module = await import('./rom-scout.esm.js');
   RomScout = module.RomScout;
@@ -288,14 +289,31 @@ async function playRom(rom) {
     emulatorDiv.innerHTML = '';
 
     // Set EmulatorJS configuration
+    window.EJS_player = '#emulator-div';
     window.EJS_gameUrl = gameUrl;
     window.EJS_core = core;
     window.EJS_gameName = rom.title;
+    window.EJS_biosUrl = '';
+    window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+    window.EJS_startOnLoaded = true;
+    window.EJS_disableDatabases = true;
+    window.EJS_threads = false;
 
-    // Reload EmulatorJS
+    // Reload EmulatorJS using the latest stable CDN
+    if (activeLoaderScript) {
+      activeLoaderScript.remove();
+      activeLoaderScript = null;
+    }
+
     const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/gh/EmulatorJS/EmulatorJS@latest/data/loader.js';
+    script.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
+    script.async = true;
+    script.onerror = () => {
+      activeLoaderScript = null;
+      alert('Failed to load EmulatorJS resources. Please try again later.');
+    };
     document.body.appendChild(script);
+    activeLoaderScript = script;
 
     // Clean up object URL after a delay
     setTimeout(() => {
