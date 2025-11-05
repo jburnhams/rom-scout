@@ -5,6 +5,10 @@
 
 import CRC32 from 'crc-32';
 
+type SubtleDigest = {
+  digest(algorithm: AlgorithmIdentifier, data: BufferSource): Promise<ArrayBuffer>;
+};
+
 /**
  * Hash types supported by rom-scout
  */
@@ -20,10 +24,33 @@ export interface HashResult {
 }
 
 /**
- * Check if we're running in a browser environment
+ * Check if we're running in Node.js
  */
-function isBrowser(): boolean {
-  return typeof window !== 'undefined' && typeof window.crypto !== 'undefined';
+function isNodeEnvironment(): boolean {
+  return typeof process !== 'undefined' && !!process.versions?.node;
+}
+
+/**
+ * Check if the current environment exposes the Web Crypto API
+ */
+function hasGlobalWebCrypto(): boolean {
+  return typeof globalThis !== 'undefined' && typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.subtle !== 'undefined';
+}
+
+/**
+ * Resolve a SubtleCrypto implementation for the current runtime
+ */
+async function getSubtleCrypto(): Promise<SubtleDigest | null> {
+  if (hasGlobalWebCrypto()) {
+    return globalThis.crypto!.subtle;
+  }
+
+  if (isNodeEnvironment()) {
+    const { webcrypto } = await import('crypto');
+    return webcrypto?.subtle ?? null;
+  }
+
+  return null;
 }
 
 /**
@@ -214,10 +241,10 @@ async function sha1Node(data: Buffer): Promise<string> {
 /**
  * Calculate SHA-1 hash in browser using Web Crypto API
  */
-async function sha1Browser(data: Uint8Array): Promise<string> {
+async function sha1WebCrypto(data: Uint8Array, subtle: SubtleDigest): Promise<string> {
   // Ensure we have a proper ArrayBuffer for Web Crypto API
   const buffer = new Uint8Array(data).buffer as ArrayBuffer;
-  const hashBuffer = await crypto.subtle.digest('SHA-1', buffer);
+  const hashBuffer = await subtle.digest('SHA-1', buffer);
   return bufferToHex(hashBuffer);
 }
 
@@ -266,24 +293,34 @@ export async function calculateHash(
   }
 
   const result: HashResult = {};
-  const browser = isBrowser();
-
   // Calculate requested hashes
   for (const type of types) {
     switch (type) {
       case 'md5':
-        if (browser) {
+        if (!isNodeEnvironment()) {
           result.md5 = md5Browser(uint8Data);
         } else {
-          result.md5 = await md5Node(uint8Data as Buffer);
+          const nodeBuffer = Buffer.isBuffer(uint8Data)
+            ? (uint8Data as Buffer)
+            : Buffer.from(uint8Data);
+          result.md5 = await md5Node(nodeBuffer);
         }
         break;
 
       case 'sha1':
-        if (browser) {
-          result.sha1 = await sha1Browser(uint8Data);
-        } else {
-          result.sha1 = await sha1Node(uint8Data as Buffer);
+        {
+          const subtle = await getSubtleCrypto();
+
+          if (subtle) {
+            result.sha1 = await sha1WebCrypto(uint8Data, subtle);
+          } else if (isNodeEnvironment()) {
+            const nodeBuffer = Buffer.isBuffer(uint8Data)
+              ? (uint8Data as Buffer)
+              : Buffer.from(uint8Data);
+            result.sha1 = await sha1Node(nodeBuffer);
+          } else {
+            throw new Error('SHA-1 hashing requires Web Crypto API support');
+          }
         }
         break;
 
