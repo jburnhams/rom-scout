@@ -18,6 +18,7 @@ try {
 
 // ROM storage
 const roms = [];
+let currentGameUrl = null;
 
 // Initialize RomScout with Hasheous
 const scout = new RomScout({
@@ -33,8 +34,8 @@ function detectPlatform(filename, metadata) {
   if (metadata && metadata.platform) {
     // Map common platform names to EmulatorJS cores
     const platformMap = {
-      'arcade': 'mame',
-      'mame': 'mame',
+      'arcade': 'arcade',
+      'mame': 'arcade',
       'sega master system': 'segaMS',
       'master system': 'segaMS',
       'sms': 'segaMS',
@@ -78,7 +79,7 @@ function detectPlatform(filename, metadata) {
     'gen': 'segaMD',
     'sms': 'segaMS',
     'gg': 'segaGG',
-    'zip': 'mame', // Assume arcade for zips
+    'zip': 'arcade', // Assume arcade for zips
   };
 
   return extMap[ext] || 'nes';
@@ -247,8 +248,8 @@ async function playRom(rom) {
     let gameData;
     let isZip = rom.filename.toLowerCase().endsWith('.zip');
 
-    if (isZip && core === 'mame') {
-      // For MAME, we can pass the ZIP directly
+    if (isZip && core === 'arcade') {
+      // For arcade, we can pass the ZIP directly as a romset
       gameData = rom.file;
     } else if (isZip) {
       // For other emulators, extract the first ROM file
@@ -277,8 +278,15 @@ async function playRom(rom) {
       gameData = rom.file;
     }
 
+    // Clean up previous game URL
+    if (currentGameUrl) {
+      URL.revokeObjectURL(currentGameUrl);
+      currentGameUrl = null;
+    }
+
     // Create object URL for the game
     const gameUrl = URL.createObjectURL(gameData);
+    currentGameUrl = gameUrl;
 
     // Show emulator overlay
     const overlay = document.getElementById('emulator-overlay');
@@ -315,11 +323,6 @@ async function playRom(rom) {
     document.body.appendChild(script);
     activeLoaderScript = script;
 
-    // Clean up object URL after a delay
-    setTimeout(() => {
-      URL.revokeObjectURL(gameUrl);
-    }, 10000);
-
   } catch (error) {
     console.error('Error playing ROM:', error);
     alert(`Failed to play ROM: ${error.message}`);
@@ -331,11 +334,46 @@ async function playRom(rom) {
  */
 function closeEmulator() {
   const overlay = document.getElementById('emulator-overlay');
+  const emulatorDiv = document.getElementById('emulator-div');
+
+  // Stop any audio/video elements
+  const iframes = emulatorDiv.querySelectorAll('iframe');
+  iframes.forEach(iframe => {
+    // Try to stop any content in the iframe
+    try {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.location = 'about:blank';
+      }
+    } catch (e) {
+      // Ignore cross-origin errors
+    }
+  });
+
+  // Stop any audio/video elements
+  const mediaElements = emulatorDiv.querySelectorAll('audio, video');
+  mediaElements.forEach(media => {
+    media.pause();
+    media.src = '';
+    media.load();
+  });
+
+  // Clear the emulator div completely
+  emulatorDiv.innerHTML = '';
+
+  // Remove the active class to hide the overlay
   overlay.classList.remove('active');
 
-  // Clear emulator
-  const emulatorDiv = document.getElementById('emulator-div');
-  emulatorDiv.innerHTML = '';
+  // Clean up the game URL
+  if (currentGameUrl) {
+    URL.revokeObjectURL(currentGameUrl);
+    currentGameUrl = null;
+  }
+
+  // Clear EmulatorJS config to prevent reuse
+  window.EJS_player = null;
+  window.EJS_gameUrl = null;
+  window.EJS_core = null;
+  window.EJS_gameName = null;
 }
 
 /**
