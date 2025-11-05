@@ -114,11 +114,55 @@ function parseModule(modulePath) {
   const exportFrom = [];
   const exportAll = [];
 
+  // Check if this is an external module with CommonJS/UMD patterns
+  const isExternal = absolute.includes('node_modules');
+
+  // For external modules, wrap CommonJS exports references in a safe wrapper
+  if (isExternal && (code.includes('typeof exports') || /^\s*exports\.\w+\s*=/m.test(code))) {
+    // Create a unique module variable name from the file path
+    const moduleName = path.basename(absolute, path.extname(absolute))
+      .replace(/[^a-zA-Z0-9_]/g, '_');
+    const moduleVar = `__${moduleName}_module__`;
+
+    // Extract the global variable name from the code (e.g., var CRC32) if it exists
+    const globalVarMatch = code.match(/^var\s+([A-Za-z0-9_$]+);/m);
+    if (globalVarMatch) {
+      const varName = globalVarMatch[1];
+      // Remove the var declaration since we'll redeclare it inside the wrapper
+      code = code.replace(/^var\s+[A-Za-z0-9_$]+;/m, '');
+      code = `const ${moduleVar} = (function() {\n  const exports = {};\n  const module = { exports };\n  let ${varName};\n${code}\n  return ${varName} || module.exports || exports;\n})();\nconst ${varName} = ${moduleVar};\n`;
+    } else {
+      // Fallback: wrap the entire module to provide exports/module and assign to a const
+      code = `const ${moduleVar} = (function() {\n  const exports = {};\n  const module = { exports };\n${code}\n  return module.exports || exports;\n})();\n`;
+    }
+  }
+
+  // Remove Node.js-only code (fs, path requires) from browser bundles
+  if (isExternal) {
+    // Remove require('fs') and require('path') statements
+    code = code.replace(/\btry\s*{\s*[^}]*require\s*\(\s*['"]fs['"]\s*\)[^}]*}\s*catch[^}]*{[^}]*}/gs, '');
+    code = code.replace(/\bvar\s+fs\s*=\s*require\s*\(\s*['"]fs['"]\s*\);?/g, '');
+    code = code.replace(/\bvar\s+path\s*=\s*require\s*\(\s*['"]path['"]\s*\);?/g, '');
+  }
+
+  const importAliases = []; // Track imported names and their sources
+
   const importRegex = /^import\s+(.+?)\s+from\s+['\"](.+?)['\"];?\s*$/gm;
   code = code.replace(importRegex, (match, clause, spec) => {
     const resolved = resolveSpecifier(absolute, spec);
     if (resolved) {
       imports.add(resolved);
+
+      // Track named imports from external modules for later aliasing
+      if (resolved.includes('node_modules')) {
+        const namedImportMatch = clause.match(/\{\s*([^}]+)\s*\}/);
+        if (namedImportMatch) {
+          const names = namedImportMatch[1].split(',').map(n => n.trim());
+          for (const name of names) {
+            importAliases.push({ name, from: resolved });
+          }
+        }
+      }
     }
     return '';
   });
@@ -158,6 +202,17 @@ function parseModule(modulePath) {
 
   code = code.replace(/\/\/# sourceMappingURL=.*$/gm, '');
   code = code.trimEnd() + '\n';
+
+  // Add aliases for imports from external modules
+  if (importAliases.length > 0) {
+    const aliasDeclarations = importAliases.map(alias => {
+      const moduleName = path.basename(alias.from, path.extname(alias.from))
+        .replace(/[^a-zA-Z0-9_]/g, '_');
+      const moduleVar = `__${moduleName}_module__`;
+      return `const ${alias.name} = ${moduleVar}.${alias.name};`;
+    }).join('\n');
+    code = aliasDeclarations + '\n' + code;
+  }
 
   const info = {
     path: absolute,
