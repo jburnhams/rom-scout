@@ -151,7 +151,12 @@ export class RomScout {
           filename: file.name,
         };
 
-        const metadata = await this.lookup(request);
+        let metadata: RomMetadata | null = null;
+        try {
+          metadata = await this.lookup(request);
+        } catch (error) {
+          console.warn('Failed to lookup metadata for archive entry, skipping:', error);
+        }
 
         if (metadata) {
           // Create a unique key for this ROM (use title + platform + publisher)
@@ -194,9 +199,13 @@ export class RomScout {
     };
 
     // Try to fetch metadata from the configured provider
-    const metadata = await this.lookup(request);
-    if (metadata) {
-      return metadata;
+    try {
+      const metadata = await this.lookup(request);
+      if (metadata) {
+        return metadata;
+      }
+    } catch (error) {
+      console.warn('Failed to lookup metadata from provider, using fallback hash metadata:', error);
     }
 
     return this.createFallbackMetadata(fileHashes, filename);
