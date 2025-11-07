@@ -19,11 +19,10 @@ describe('startRomPlayer', () => {
     globalAny.HTMLIFrameElement = windowInstance.HTMLIFrameElement;
     globalAny.HTMLVideoElement = windowInstance.HTMLVideoElement;
     globalAny.HTMLAudioElement = windowInstance.HTMLAudioElement;
-    globalAny.navigator = windowInstance.navigator;
     globalAny.URL = windowInstance.URL;
 
     cleanupGlobals = () => {
-      const keys = ['window', 'document', 'HTMLElement', 'HTMLIFrameElement', 'HTMLVideoElement', 'HTMLAudioElement', 'navigator'];
+      const keys = ['window', 'document', 'HTMLElement', 'HTMLIFrameElement', 'HTMLVideoElement', 'HTMLAudioElement'];
       for (const key of keys) {
         delete globalAny[key];
       }
