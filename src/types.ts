@@ -55,6 +55,9 @@ export interface ImageMetadata {
  * ROM metadata result
  */
 export interface RomMetadata {
+  /** Unique identifier composed of provider name and source-specific ID */
+  id: string;
+
   /** Game title */
   title: string;
 

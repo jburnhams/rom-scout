@@ -109,6 +109,7 @@ export class HasheousClient {
     }
 
     return {
+      id: this.buildIdentifier(data),
       title: data.name || 'Unknown',
       platform: data.platform?.name,
       publisher: data.publisher?.name,
@@ -124,5 +125,36 @@ export class HasheousClient {
       source: 'hasheous',
       raw: data,
     };
+  }
+
+  /**
+   * Build the metadata identifier for Hasheous responses
+   */
+  private buildIdentifier(data: any): string {
+    const attribute = Array.isArray(data.attributes)
+      ? data.attributes.find((attr: any) =>
+          ['GameId', 'gameId', 'Id'].includes(attr.attributeType)
+        )
+      : undefined;
+
+    const attributeId = attribute?.value ?? attribute?.attributeValue ?? attribute?.id;
+
+    const providerId =
+      data.id ??
+      data.gameId ??
+      data.game_id ??
+      data.game?.id ??
+      data.game?.gameId ??
+      data.metadataId ??
+      data.romId ??
+      data.rom?.id ??
+      data.rom?.romId ??
+      attributeId;
+
+    if (providerId === undefined || providerId === null) {
+      throw new Error('Hasheous response missing required identifier field');
+    }
+
+    return `HASHEOUS${String(providerId)}`;
   }
 }

@@ -15,6 +15,7 @@ describe('Archive Multi-File Matching', () => {
       const mockLookupResults = new Map<string, RomMetadata | null>([
         // File 1 - matches Official ROM
         ['file1-hash', {
+          id: 'HASHEOUS0001',
           title: 'Official Game',
           platform: 'Arcade',
           publisher: 'Namco',
@@ -22,6 +23,7 @@ describe('Archive Multi-File Matching', () => {
         }],
         // File 2 - matches Official ROM
         ['file2-hash', {
+          id: 'HASHEOUS0001',
           title: 'Official Game',
           platform: 'Arcade',
           publisher: 'Namco',
@@ -29,6 +31,7 @@ describe('Archive Multi-File Matching', () => {
         }],
         // File 3 - matches Official ROM
         ['file3-hash', {
+          id: 'HASHEOUS0001',
           title: 'Official Game',
           platform: 'Arcade',
           publisher: 'Namco',
@@ -36,6 +39,7 @@ describe('Archive Multi-File Matching', () => {
         }],
         // File 4 - matches Bootleg ROM
         ['file4-hash', {
+          id: 'HASHEOUS9999',
           title: 'Bootleg Game',
           platform: 'Arcade',
           publisher: 'Unknown',

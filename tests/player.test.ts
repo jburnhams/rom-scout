@@ -56,6 +56,10 @@ describe('startRomPlayer', () => {
     return new windowInstance.Blob(blobParts, { type }) as unknown as Blob;
   }
 
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
   it('detects core from metadata and filename', () => {
     assert.strictEqual(detectEmulatorCore(undefined, { platform: 'Super Nintendo' }), 'snes');
     assert.strictEqual(detectEmulatorCore('game.gba'), 'gba');
@@ -184,4 +188,272 @@ describe('startRomPlayer', () => {
       windowInstance.document.body.appendChild = originalAppendChild as any;
     }
   });
+
+  it('restores and persists emulator saves using IndexedDB', async () => {
+    const { indexedDB, getStore } = createFakeIndexedDB();
+    const savesStore = getStore('saves');
+
+    const romId = 'HASHEOUS1234';
+    const existingSave = new Uint8Array([1, 2, 3, 4]);
+    savesStore.set(romId, { data: existingSave.buffer.slice(0), updatedAt: Date.now() });
+
+    const globalAny = globalThis as any;
+    const priorIndexedDB = globalAny.indexedDB;
+    const priorEmulator = globalAny.EJS_emulator;
+    const priorReady = globalAny.EJS_ready;
+    const priorSaveUpdate = globalAny.EJS_onSaveUpdate;
+
+    let readyCallbackCount = 0;
+    const previousReady = () => {
+      readyCallbackCount += 1;
+    };
+
+    let saveUpdateCallbackCount = 0;
+    const previousSaveUpdate = () => {
+      saveUpdateCallbackCount += 1;
+    };
+
+    globalAny.indexedDB = indexedDB;
+    globalAny.EJS_ready = previousReady;
+    globalAny.EJS_onSaveUpdate = previousSaveUpdate;
+
+    const eventHandlers = new Map<string, Array<(payload?: unknown) => void>>();
+
+    const files = new Map<string, Uint8Array>();
+    const directories = new Set<string>(['/']);
+    const filesystem = {
+      analyzePath(path: string) {
+        return { exists: directories.has(path) || files.has(path) };
+      },
+      mkdir(path: string) {
+        directories.add(path);
+      },
+      writeFile(path: string, data: Uint8Array) {
+        const copy = new Uint8Array(data);
+        files.set(path, copy);
+        directories.add(path);
+      },
+      unlink(path: string) {
+        files.delete(path);
+      },
+    };
+
+    let loadSaveFilesCount = 0;
+    const emulator = {
+      on(event: string, handler: (payload?: unknown) => void) {
+        const handlers = eventHandlers.get(event) ?? [];
+        handlers.push(handler);
+        eventHandlers.set(event, handlers);
+      },
+      gameManager: {
+        FS: filesystem,
+        getSaveFilePath: () => '/saves/test.sav',
+        loadSaveFiles: () => {
+          loadSaveFilesCount += 1;
+        },
+      },
+    };
+
+    globalAny.EJS_emulator = emulator;
+
+    const container = createContainer('persist-target');
+    const romBlob = createBlob(new Uint8Array([0, 1, 2]));
+
+    const instance = await startRomPlayer({
+      target: container,
+      file: romBlob,
+      filename: 'persistent.nes',
+      metadata: { id: romId, title: 'Persistent Game', platform: 'NES' },
+      loaderUrl: 'data:text/javascript,',
+      autoLoadLoaderScript: false,
+    });
+
+    const readyWrapper = globalAny.EJS_ready as (() => void) | undefined;
+    const saveUpdateWrapper = globalAny.EJS_onSaveUpdate as ((payload: unknown) => void) | undefined;
+    assert.ok(typeof readyWrapper === 'function');
+    assert.ok(typeof saveUpdateWrapper === 'function');
+
+    const invokeReady = readyWrapper as () => void;
+    const invokeSaveUpdate = saveUpdateWrapper as (payload: unknown) => void;
+
+    invokeReady();
+    await flushMicrotasks();
+    assert.strictEqual(readyCallbackCount, 1);
+
+    const databaseHandlers = eventHandlers.get('saveDatabaseLoaded');
+    assert.ok(databaseHandlers && databaseHandlers.length > 0, 'saveDatabaseLoaded handler should be registered');
+    databaseHandlers[0]();
+    await flushMicrotasks();
+
+    const savedBuffer = files.get('/saves/test.sav');
+    assert.ok(savedBuffer, 'persisted save data should be written to the filesystem');
+    assert.deepStrictEqual(Array.from(savedBuffer!), Array.from(existingSave));
+
+    const startHandlers = eventHandlers.get('start');
+    assert.ok(startHandlers && startHandlers.length > 0, 'start handler should be registered');
+    startHandlers[0]();
+    assert.strictEqual(loadSaveFilesCount, 1, 'loadSaveFiles should be invoked after startup');
+
+    const saveHandlers = eventHandlers.get('saveSave');
+    assert.ok(saveHandlers && saveHandlers.length > 0, 'save handler should be registered');
+    const newSave = new Uint8Array([9, 8, 7]);
+    saveHandlers[0](newSave);
+    await flushMicrotasks();
+
+    const firstRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
+    assert.ok(firstRecord, 'IndexedDB should receive save data from emulator events');
+    assert.deepStrictEqual(Array.from(new Uint8Array(firstRecord.data)), Array.from(newSave));
+
+    const alternateSave = new Uint8Array([5, 4, 3, 2]);
+    invokeSaveUpdate(alternateSave);
+    await flushMicrotasks();
+
+    const updatedRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
+    assert.ok(updatedRecord, 'IndexedDB should be updated when save callbacks fire');
+    assert.deepStrictEqual(Array.from(new Uint8Array(updatedRecord.data)), Array.from(alternateSave));
+    assert.strictEqual(saveUpdateCallbackCount, 1, 'previous save update handler should be invoked');
+
+    instance.destroy();
+    await flushMicrotasks();
+
+    const readyAfterDestroy = globalAny.EJS_ready;
+    const saveAfterDestroy = globalAny.EJS_onSaveUpdate;
+
+    if (priorIndexedDB === undefined) {
+      delete globalAny.indexedDB;
+    } else {
+      globalAny.indexedDB = priorIndexedDB;
+    }
+
+    if (priorEmulator === undefined) {
+      delete globalAny.EJS_emulator;
+    } else {
+      globalAny.EJS_emulator = priorEmulator;
+    }
+
+    if (priorReady === undefined) {
+      delete globalAny.EJS_ready;
+    } else {
+      globalAny.EJS_ready = priorReady;
+    }
+
+    if (priorSaveUpdate === undefined) {
+      delete globalAny.EJS_onSaveUpdate;
+    } else {
+      globalAny.EJS_onSaveUpdate = priorSaveUpdate;
+    }
+
+    assert.strictEqual(readyAfterDestroy, previousReady, 'destroy should restore previous ready handler');
+    assert.strictEqual(saveAfterDestroy, previousSaveUpdate, 'destroy should restore previous save update handler');
+  });
 });
+
+type FakeSaveRecord = { data: ArrayBuffer; updatedAt: number };
+
+function createFakeIndexedDB() {
+  const stores = new Map<string, Map<string, FakeSaveRecord>>();
+  const storeNames = new Set<string>();
+
+  const ensureStore = (name: string) => {
+    if (!stores.has(name)) {
+      stores.set(name, new Map());
+    }
+    storeNames.add(name);
+    return stores.get(name)!;
+  };
+
+  const createRequest = (executor: (request: any) => void) => {
+    const request: any = {
+      onsuccess: null,
+      onerror: null,
+      result: undefined,
+    };
+
+    queueMicrotask(() => {
+      try {
+        executor(request);
+      } catch (error) {
+        if (typeof request.onerror === 'function') {
+          request.onerror.call(request, error);
+        }
+      }
+    });
+
+    return request;
+  };
+
+  const createStoreInterface = (store: Map<string, FakeSaveRecord>) => ({
+    put(value: FakeSaveRecord, key: string) {
+      return createRequest((request) => {
+        store.set(key, value);
+        if (typeof request.onsuccess === 'function') {
+          request.onsuccess.call(request);
+        }
+      });
+    },
+    delete(key: string) {
+      return createRequest((request) => {
+        store.delete(key);
+        if (typeof request.onsuccess === 'function') {
+          request.onsuccess.call(request);
+        }
+      });
+    },
+    get(key: string) {
+      return createRequest((request) => {
+        request.result = store.get(key);
+        if (typeof request.onsuccess === 'function') {
+          request.onsuccess.call(request);
+        }
+      });
+    },
+  });
+
+  const database: any = {
+    objectStoreNames: {
+      contains(name: string) {
+        return storeNames.has(name);
+      },
+    },
+    createObjectStore(name: string) {
+      return createStoreInterface(ensureStore(name));
+    },
+    transaction(name: string) {
+      return {
+        objectStore() {
+          return createStoreInterface(ensureStore(name));
+        },
+        onerror: null,
+      };
+    },
+    close() {
+      // noop for tests
+    },
+  };
+
+  const factory = {
+    open(_name: string, _version?: number) {
+      const request: any = {
+        result: database,
+        onsuccess: null,
+        onerror: null,
+        onupgradeneeded: null,
+        onblocked: null,
+      };
+
+      queueMicrotask(() => {
+        request.onupgradeneeded?.call(request);
+        request.onsuccess?.call(request);
+      });
+
+      return request;
+    },
+  };
+
+  return {
+    indexedDB: factory as unknown as IDBFactory,
+    getStore(name: string) {
+      return ensureStore(name) as Map<string, FakeSaveRecord>;
+    },
+  };
+}
