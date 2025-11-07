@@ -1,7 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { Window } from 'happy-dom';
-import { zipSync, strToU8 } from 'fflate';
 import { startRomPlayer, detectEmulatorCore } from '../src/player.js';
 
 describe('startRomPlayer', () => {
@@ -97,22 +96,22 @@ describe('startRomPlayer', () => {
     assert.strictEqual(windowInstance.document.querySelectorAll('script').length, 0);
   });
 
-  it('extracts ROM files from archives before launching emulator', async () => {
+  it('uses the provided ROM blob without extraction', async () => {
     const container = createContainer();
 
-    const archiveData = zipSync({ 'folder/test.gba': strToU8('rom-data') });
-    const archiveBlob = createBlob(new Uint8Array(archiveData), 'application/zip');
+    const romData = new Uint8Array([0x50, 0x4B, 0x03, 0x04]);
+    const romBlob = createBlob(romData, 'application/zip');
 
     const instance = await startRomPlayer({
       target: container,
-      file: archiveBlob,
-      filename: 'archive.zip',
+      file: romBlob,
+      filename: 'folder/archive.zip',
       metadata: { title: 'Archive Game', platform: 'Game Boy Advance' },
       loaderUrl: 'data:text/javascript,',
       autoLoadLoaderScript: false,
     });
 
-    assert.strictEqual(instance.filename, 'test.gba');
+    assert.strictEqual(instance.filename, 'archive.zip');
     assert.strictEqual(instance.core, 'gba');
     instance.destroy();
   });

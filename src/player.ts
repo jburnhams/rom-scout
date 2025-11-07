@@ -1,10 +1,7 @@
 import type { RomMetadata } from './types.js';
-import { extractZipFiles, isArchiveFilename, isZipArchive } from './archive.js';
 
 const DEFAULT_LOADER_URL = 'https://cdn.emulatorjs.org/stable/data/loader.js';
 const DEFAULT_DATA_PATH = 'https://cdn.emulatorjs.org/stable/data/';
-const ROM_FILE_PATTERN = /\.(bin|nes|snes|smc|gba|gb|gbc|smd|md|gen|sms|gg)$/i;
-
 const PLATFORM_CORE_PATTERNS: Array<[string, string]> = [
   ['game boy advance', 'gba'],
   ['gameboy advance', 'gba'],
@@ -169,44 +166,6 @@ export function detectEmulatorCore(filename?: string, metadata?: Partial<RomMeta
   return 'nes';
 }
 
-async function extractRomFromArchive(file: Blob, filename?: string): Promise<{ blob: Blob; filename?: string; }> {
-  const effectiveName = filename ?? ('name' in file ? (file as File).name : undefined);
-  const normalisedName = normaliseFilename(effectiveName);
-
-  const shouldAttemptExtraction = normalisedName ? isArchiveFilename(normalisedName) : false;
-  let archiveBytes: Uint8Array | null = null;
-
-  if (shouldAttemptExtraction) {
-    const arrayBuffer = await file.arrayBuffer();
-    archiveBytes = new Uint8Array(arrayBuffer);
-  } else {
-    const headerBuffer = await file.slice(0, 4).arrayBuffer();
-    const headerBytes = new Uint8Array(headerBuffer);
-    if (headerBytes.length >= 2 && headerBytes[0] === 0x50 && headerBytes[1] === 0x4B) {
-      const arrayBuffer = await file.arrayBuffer();
-      archiveBytes = new Uint8Array(arrayBuffer);
-    }
-  }
-
-  if (!archiveBytes) {
-    return { blob: file, filename: normalisedName };
-  }
-
-  if (!isZipArchive(archiveBytes)) {
-    return { blob: file, filename: normalisedName };
-  }
-
-  const extractedFiles = extractZipFiles(archiveBytes);
-  if (extractedFiles.length === 0) {
-    throw new Error('No files found in archive');
-  }
-
-  const romFile = extractedFiles.find(entry => ROM_FILE_PATTERN.test(entry.name)) ?? extractedFiles[0];
-  const romBytes = Uint8Array.from(romFile.data);
-  const romBlob = new Blob([romBytes], { type: 'application/octet-stream' });
-  return { blob: romBlob, filename: normaliseFilename(romFile.name) };
-}
-
 function getUrlFactory(): typeof URL | undefined {
   if (typeof window !== 'undefined' && window.URL) {
     return window.URL;
@@ -299,11 +258,12 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
 
   cleanupActivePlayer();
 
-  const { blob: romBlob, filename } = await extractRomFromArchive(options.file, options.filename);
-  const displayName = options.metadata?.title ?? filename ?? options.filename ?? ('name' in options.file ? (options.file as File).name : 'Unknown ROM');
-  const core = options.core ?? detectEmulatorCore(filename ?? options.filename, options.metadata);
+  const effectiveName = options.filename ?? ('name' in options.file ? (options.file as File).name : undefined);
+  const filename = normaliseFilename(effectiveName);
+  const displayName = options.metadata?.title ?? filename ?? effectiveName ?? 'Unknown ROM';
+  const core = options.core ?? detectEmulatorCore(filename ?? effectiveName, options.metadata);
 
-  const gameUrl = createObjectUrl(romBlob);
+  const gameUrl = createObjectUrl(options.file);
 
   element.innerHTML = '';
 
@@ -312,7 +272,7 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
     core,
     gameUrl,
     metadata: options.metadata,
-    filename: filename ?? options.filename,
+    filename,
     loaderScript: null,
     destroyed: false,
     destroy: () => {
