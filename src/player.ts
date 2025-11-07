@@ -108,7 +108,7 @@ export interface RomPlayerInstance {
   /**
    * Object URL that EmulatorJS will load. Consumers should call `destroy()` to release it.
    */
-  gameUrl: string;
+  gameUrl: string | File;
   metadata?: Partial<RomMetadata>;
   filename?: string;
   destroy(): void;
@@ -192,7 +192,7 @@ function cleanupActivePlayer(): void {
   activePlayer = null;
 }
 
-function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string, gameName: string): HTMLScriptElement {
+function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string | File, gameName: string): HTMLScriptElement {
   const globalScope = globalThis as EmulatorGlobal;
 
   const element = instance.element;
@@ -263,7 +263,7 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
   const displayName = options.metadata?.title ?? filename ?? effectiveName ?? 'Unknown ROM';
   const core = options.core ?? detectEmulatorCore(filename ?? effectiveName, options.metadata);
 
-  const gameUrl = 'name' in options.file ? options.file : createObjectUrl(options.file);
+  const gameUrl = 'name' in options.file ? options.file as File : createObjectUrl(options.file);
 
   element.innerHTML = '';
 
