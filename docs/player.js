@@ -336,6 +336,15 @@ function closeEmulator() {
   const overlay = document.getElementById('emulator-overlay');
   const emulatorDiv = document.getElementById('emulator-div');
 
+  // Politely ask EmulatorJS to stop the running core before tearing down the DOM
+  try {
+    if (window.EJS_emulator && typeof window.EJS_emulator.callEvent === 'function') {
+      window.EJS_emulator.callEvent('exit');
+    }
+  } catch (error) {
+    console.warn('Failed to signal EmulatorJS to exit cleanly:', error);
+  }
+
   // Stop any audio/video elements
   const iframes = emulatorDiv.querySelectorAll('iframe');
   iframes.forEach(iframe => {
@@ -359,6 +368,18 @@ function closeEmulator() {
 
   // Clear the emulator div completely
   emulatorDiv.innerHTML = '';
+
+  // Clear reference to the EmulatorJS instance so a fresh one is created next time
+  if (window.EJS_emulator) {
+    try {
+      if (typeof window.EJS_emulator.destroy === 'function') {
+        window.EJS_emulator.destroy();
+      }
+    } catch (error) {
+      console.warn('Failed to destroy EmulatorJS instance:', error);
+    }
+    window.EJS_emulator = null;
+  }
 
   // Remove the active class to hide the overlay
   overlay.classList.remove('active');
