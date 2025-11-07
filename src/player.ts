@@ -43,7 +43,7 @@ const EXTENSION_CORE_MAP: Record<string, string> = {
 
 type EmulatorGlobal = typeof globalThis & {
   EJS_player?: string | null;
-  EJS_gameUrl?: string | null;
+  EJS_gameUrl?: string | Blob | null;
   EJS_core?: string | null;
   EJS_gameName?: string | null;
   EJS_biosUrl?: string | null;
@@ -108,7 +108,7 @@ export interface RomPlayerInstance {
   /**
    * Object URL that EmulatorJS will load. Consumers should call `destroy()` to release it.
    */
-  gameUrl: string;
+  gameUrl: string | Blob;
   metadata?: Partial<RomMetadata>;
   filename?: string;
   destroy(): void;
@@ -192,7 +192,7 @@ function cleanupActivePlayer(): void {
   activePlayer = null;
 }
 
-function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string, gameName: string): HTMLScriptElement {
+function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string | Blob, gameName: string): HTMLScriptElement {
   const globalScope = globalThis as EmulatorGlobal;
 
   const element = instance.element;
@@ -289,7 +289,7 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
         }
         if (instance.gameUrl) {
           const urlFactory = getUrlFactory();
-          if (urlFactory && typeof urlFactory.revokeObjectURL === 'function') {
+          if (typeof instance.gameUrl === 'string' && urlFactory && typeof urlFactory.revokeObjectURL === 'function') {
             try {
               urlFactory.revokeObjectURL(instance.gameUrl);
             } catch (error) {
