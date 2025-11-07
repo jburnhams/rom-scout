@@ -92,7 +92,7 @@ describe('startRomPlayer', () => {
     const scripts = windowInstance.document.querySelectorAll('script');
     assert.strictEqual(scripts.length, 0, 'loader script should not be appended when disabled');
 
-    instance.destroy();
+    await instance.destroy();
 
     assert.strictEqual(globalAny.EJS_player, null);
     assert.strictEqual(globalAny.EJS_core, null);
@@ -116,7 +116,7 @@ describe('startRomPlayer', () => {
 
     assert.strictEqual(instance.filename, 'archive.zip');
     assert.strictEqual(instance.core, 'gba');
-    instance.destroy();
+    await instance.destroy();
   });
 
   it('cleans up previous player when starting a new one', async () => {
@@ -148,7 +148,7 @@ describe('startRomPlayer', () => {
     assert.notStrictEqual(globalAny.EJS_gameUrl, firstUrl, 'game URL should update for new player');
 
     // Destroying the second instance should clean up globals
-    second.destroy();
+    await second.destroy();
     assert.strictEqual(globalAny.EJS_player, null);
   });
 
@@ -183,7 +183,7 @@ describe('startRomPlayer', () => {
       assert.strictEqual(appendedScript.getAttribute('src'), 'data:text/javascript,');
     } finally {
       if (instance) {
-        instance.destroy();
+        await instance.destroy();
       }
       windowInstance.document.body.appendChild = originalAppendChild as any;
     }
@@ -219,6 +219,15 @@ describe('startRomPlayer', () => {
 
     const eventHandlers = new Map<string, Array<(payload?: unknown) => void>>();
 
+    const emit = (event: string, payload?: unknown) => {
+      const handlers = eventHandlers.get(event);
+      if (handlers) {
+        for (const handler of handlers) {
+          handler(payload);
+        }
+      }
+    };
+
     const files = new Map<string, Uint8Array>();
     const directories = new Set<string>(['/']);
     const filesystem = {
@@ -236,14 +245,33 @@ describe('startRomPlayer', () => {
       unlink(path: string) {
         files.delete(path);
       },
-    };
+      readFile(path: string) {
+        const existing = files.get(path);
+        if (!existing) {
+          throw new Error(`File not found: ${path}`);
+        }
+        return new Uint8Array(existing);
+      },
+    } as const;
 
     let loadSaveFilesCount = 0;
+    let loadEventCount = 0;
+    let manualSaveEventCount = 0;
+    let manualSavePayload = new Uint8Array([9, 8, 7]);
+
     const emulator = {
       on(event: string, handler: (payload?: unknown) => void) {
         const handlers = eventHandlers.get(event) ?? [];
         handlers.push(handler);
         eventHandlers.set(event, handlers);
+      },
+      callEvent(event: string) {
+        if (event === 'save') {
+          manualSaveEventCount += 1;
+          emit('saveSave', manualSavePayload);
+        } else if (event === 'load') {
+          loadEventCount += 1;
+        }
       },
       gameManager: {
         FS: filesystem,
@@ -299,6 +327,7 @@ describe('startRomPlayer', () => {
     assert.ok(savedBuffer, 'persisted save data should be written to the filesystem after start event');
     assert.deepStrictEqual(Array.from(savedBuffer!), Array.from(existingSave));
     assert.strictEqual(loadSaveFilesCount, 1, 'loadSaveFiles should be invoked after startup');
+    assert.strictEqual(loadEventCount, 1, 'load event should trigger after startup restore');
 
     const saveHandlers = eventHandlers.get('saveSave');
     assert.ok(saveHandlers && saveHandlers.length > 0, 'save handler should be registered');
@@ -319,7 +348,28 @@ describe('startRomPlayer', () => {
     assert.deepStrictEqual(Array.from(new Uint8Array(updatedRecord.data)), Array.from(alternateSave));
     assert.strictEqual(saveUpdateCallbackCount, 1, 'previous save update handler should be invoked');
 
-    instance.destroy();
+    manualSavePayload = new Uint8Array([4, 5, 6, 7]);
+    const manualSaveResult = await instance.persistSave();
+    assert.strictEqual(manualSaveResult, true, 'persistSave should report success when data is captured');
+    await flushMicrotasks();
+    const postManualRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
+    assert.ok(postManualRecord, 'Manual save should write to IndexedDB');
+    assert.deepStrictEqual(Array.from(new Uint8Array(postManualRecord.data)), Array.from(manualSavePayload));
+    assert.strictEqual(manualSaveEventCount, 1, 'persistSave should trigger emulator save event');
+
+    const manualLoadData = new Uint8Array([11, 12, 13, 14]);
+    savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
+    files.delete('/saves/test.sav');
+    const manualLoadResult = await instance.loadLatestSave();
+    assert.strictEqual(manualLoadResult, true, 'loadLatestSave should restore when data exists');
+    await flushMicrotasks();
+    const restoredManualBuffer = files.get('/saves/test.sav');
+    assert.ok(restoredManualBuffer, 'Manual load should write save data to filesystem');
+    assert.deepStrictEqual(Array.from(restoredManualBuffer!), Array.from(manualLoadData));
+    assert.strictEqual(loadSaveFilesCount, 2, 'loadSaveFiles should be invoked during manual load');
+    assert.strictEqual(loadEventCount, 2, 'manual load should trigger emulator load event');
+
+    await instance.destroy();
     await flushMicrotasks();
 
     const readyAfterDestroy = globalAny.EJS_ready;
