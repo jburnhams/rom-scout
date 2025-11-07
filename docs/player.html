@@ -128,10 +128,16 @@
       max-height: 800px;
     }
 
-    .close-btn {
+    .emulator-controls {
       position: absolute;
       top: -40px;
       right: 0;
+      display: flex;
+      gap: 0.5rem;
+      z-index: 1001;
+    }
+
+    .emulator-control-btn {
       background: white;
       color: var(--text-color);
       border: none;
@@ -139,10 +145,11 @@
       border-radius: 4px;
       cursor: pointer;
       font-weight: 600;
-      z-index: 1001;
+      box-shadow: var(--shadow);
+      transition: background 0.2s;
     }
 
-    .close-btn:hover {
+    .emulator-control-btn:hover {
       background: var(--border-color);
     }
 
@@ -213,7 +220,11 @@
   <!-- Emulator overlay -->
   <div class="emulator-overlay" id="emulator-overlay">
     <div class="emulator-container">
-      <button class="close-btn" id="close-emulator">Close Emulator</button>
+      <div class="emulator-controls">
+        <button class="emulator-control-btn" id="close-emulator">Close Emulator</button>
+        <button class="emulator-control-btn" id="load-emulator-save">Load Save</button>
+        <button class="emulator-control-btn" id="save-emulator-save">Save Now</button>
+      </div>
       <div id="emulator-div"></div>
     </div>
   </div>

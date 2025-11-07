@@ -258,7 +258,7 @@ async function playRom(rom) {
     }
 
     if (activePlayerInstance) {
-      activePlayerInstance.destroy();
+      await activePlayerInstance.destroy();
       activePlayerInstance = null;
     }
 
@@ -284,18 +284,56 @@ async function playRom(rom) {
 /**
  * Close emulator
  */
-function closeEmulator() {
+async function closeEmulator() {
   const overlay = document.getElementById('emulator-overlay');
   const emulatorDiv = document.getElementById('emulator-div');
 
   if (activePlayerInstance) {
-    activePlayerInstance.destroy();
+    await activePlayerInstance.destroy();
     activePlayerInstance = null;
   } else {
     emulatorDiv.innerHTML = '';
   }
 
   overlay.classList.remove('active');
+}
+
+async function saveActiveEmulator() {
+  if (!activePlayerInstance) {
+    console.log('[ROM Scout Demo] No active player available for manual save');
+    return;
+  }
+
+  console.log('[ROM Scout Demo] Manual save requested');
+  try {
+    const saved = await activePlayerInstance.persistSave();
+    if (saved) {
+      console.log('[ROM Scout Demo] Manual save completed successfully');
+    } else {
+      console.log('[ROM Scout Demo] Manual save finished without new data');
+    }
+  } catch (error) {
+    console.error('[ROM Scout Demo] Manual save failed:', error);
+  }
+}
+
+async function loadActiveEmulatorSave() {
+  if (!activePlayerInstance) {
+    console.log('[ROM Scout Demo] No active player available for manual load');
+    return;
+  }
+
+  console.log('[ROM Scout Demo] Manual load requested');
+  try {
+    const restored = await activePlayerInstance.loadLatestSave();
+    if (restored) {
+      console.log('[ROM Scout Demo] Manual load restored save data');
+    } else {
+      console.log('[ROM Scout Demo] Manual load completed but no save data was restored');
+    }
+  } catch (error) {
+    console.error('[ROM Scout Demo] Manual load failed:', error);
+  }
 }
 
 /**
@@ -363,7 +401,17 @@ async function init() {
   console.log('Initializing ROM player...');
 
   // Set up close button
-  document.getElementById('close-emulator').addEventListener('click', closeEmulator);
+  document.getElementById('close-emulator').addEventListener('click', () => {
+    void closeEmulator();
+  });
+
+  document.getElementById('save-emulator-save').addEventListener('click', () => {
+    void saveActiveEmulator();
+  });
+
+  document.getElementById('load-emulator-save').addEventListener('click', () => {
+    void loadActiveEmulatorSave();
+  });
 
   // Set up file input
   document.getElementById('file-input').addEventListener('change', (e) => {
