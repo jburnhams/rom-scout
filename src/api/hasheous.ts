@@ -5,6 +5,11 @@
 
 import type { HashLookupRequest, RomMetadata, ImageMetadata } from '../types.js';
 
+interface LookupResponse {
+  status: number;
+  data: any;
+}
+
 export interface HasheousConfig {
   baseUrl: string;
   timeout?: number;
@@ -45,34 +50,17 @@ export class HasheousClient {
         url = `${this.corsProxy}${url}`;
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      const { status, data } = await this.performLookupRequest(url, JSON.stringify(requestBody));
 
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            return null; // ROM not found
-          }
-          throw new Error(`Hasheous API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        return this.transformResponse(data);
-      } finally {
-        clearTimeout(timeoutId);
+      if (status === 404) {
+        return null;
       }
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`Hasheous API error: ${status}`);
+      }
+
+      return this.transformResponse(data);
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
@@ -81,6 +69,150 @@ export class HasheousClient {
         throw error;
       }
       throw new Error('Unknown error occurred during Hasheous API request');
+    }
+  }
+
+  private async performLookupRequest(url: string, body: string): Promise<LookupResponse> {
+    const fetchResult = await this.tryFetch(url, body);
+    if (fetchResult) {
+      return fetchResult;
+    }
+
+    const fallbackResult = await this.tryCurlFallback(url, body);
+    if (fallbackResult) {
+      return fallbackResult;
+    }
+
+    throw new Error('Failed to reach Hasheous API');
+  }
+
+  private async tryFetch(url: string, body: string): Promise<LookupResponse | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body,
+        signal: controller.signal,
+      });
+
+      const text = await response.text();
+      const data = this.parseJsonSafely(text);
+      return { status: response.status, data };
+    } catch (error) {
+      if (this.isNetworkUnreachable(error)) {
+        return null;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async tryCurlFallback(url: string, body: string): Promise<LookupResponse | null> {
+    if (!this.isNodeEnvironment()) {
+      return null;
+    }
+
+    try {
+      const [{ execFile }] = await Promise.all([import('node:child_process')]);
+
+      const timeoutSeconds = Math.max(1, Math.ceil(this.timeout / 1000));
+      const args = [
+        '-sS',
+        '-X',
+        'POST',
+        '-H',
+        'Accept: application/json',
+        '-H',
+        'Content-Type: application/json',
+        '--data',
+        body,
+        '--max-time',
+        String(timeoutSeconds),
+        '-o',
+        '-',
+        '-w',
+        '\n%{http_code}\n',
+        url,
+      ];
+
+      const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+        execFile('curl', args, { env: process.env }, (error, stdout, stderr) => {
+          if (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            err.message = `${err.message}${stderr ? `: ${stderr}` : ''}`;
+            reject(err);
+            return;
+          }
+          resolve({ stdout: String(stdout) });
+        });
+      });
+
+      const trimmed = stdout.trimEnd();
+      const lastNewline = trimmed.lastIndexOf('\n');
+      if (lastNewline === -1) {
+        throw new Error('Unexpected curl output');
+      }
+
+      const bodyText = trimmed.slice(0, lastNewline);
+      const statusText = trimmed.slice(lastNewline + 1).trim();
+      const status = Number.parseInt(statusText, 10);
+
+      if (Number.isNaN(status)) {
+        throw new Error(`Invalid HTTP status from curl: ${statusText}`);
+      }
+
+      const data = this.parseJsonSafely(bodyText);
+      return { status, data };
+    } catch (error) {
+      console.warn('Failed to retry Hasheous lookup via curl:', error);
+      return null;
+    }
+  }
+
+  private isNetworkUnreachable(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause && this.isNetworkUnreachable(cause)) {
+      return true;
+    }
+
+    const code = (error as { code?: unknown }).code;
+    if (code === 'ENETUNREACH') {
+      return true;
+    }
+
+    const nestedErrors = (error as { errors?: unknown }).errors;
+    if (Array.isArray(nestedErrors)) {
+      return nestedErrors.some((nested) => this.isNetworkUnreachable(nested));
+    }
+
+    return false;
+  }
+
+  private isNodeEnvironment(): boolean {
+    return typeof process !== 'undefined' && !!process.versions?.node;
+  }
+
+  private parseJsonSafely(text: string): any {
+    if (!text) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      console.warn('Failed to parse Hasheous JSON response:', error);
+      throw error;
     }
   }
 
