@@ -263,7 +263,7 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
   const displayName = options.metadata?.title ?? filename ?? effectiveName ?? 'Unknown ROM';
   const core = options.core ?? detectEmulatorCore(filename ?? effectiveName, options.metadata);
 
-  const gameUrl = 'name' in options.file ? options.file : createObjectUrl(options.file);
+  const gameUrl = 'name' in options.file ? options.file as File : createObjectUrl(options.file);
 
   element.innerHTML = '';
 
