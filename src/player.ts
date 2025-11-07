@@ -267,6 +267,7 @@ interface EmulatorFilesystem {
   analyzePath(path: string): { exists: boolean };
   mkdir(path: string): void;
   writeFile(path: string, data: Uint8Array): void;
+  readFile(path: string): Uint8Array;
   unlink(path: string): void;
 }
 
@@ -540,6 +541,43 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
   const originalDestroy = instance.destroy.bind(instance);
   instance.destroy = () => {
     console.log('[ROM Scout] Destroying player instance for ROM:', romId);
+
+    // Explicitly save the current state before destroying
+    const emulator = globalScope.EJS_emulator;
+    if (emulator && emulator.gameManager) {
+      console.log('[ROM Scout] Attempting to save state before destroying...');
+      try {
+        // Try to get save data from the emulator filesystem
+        const manager = emulator.gameManager;
+        if (manager.FS && typeof manager.getSaveFilePath === 'function') {
+          const savePath = manager.getSaveFilePath();
+          if (savePath) {
+            try {
+              const fs = manager.FS;
+              if (fs.analyzePath(savePath).exists) {
+                const saveData = fs.readFile(savePath);
+                if (saveData && saveData.length > 0) {
+                  console.log('[ROM Scout] Read save data from filesystem before close, size:', saveData.length, 'bytes');
+                  // Trigger the save handler with the data
+                  handleSavePayload(saveData);
+                } else {
+                  console.log('[ROM Scout] No save data to persist on close');
+                }
+              } else {
+                console.log('[ROM Scout] No save file exists at path:', savePath);
+              }
+            } catch (error) {
+              console.warn('[ROM Scout] Failed to read save file before destroy:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[ROM Scout] Failed to save state before destroying:', error);
+      }
+    } else {
+      console.log('[ROM Scout] No emulator instance available to save');
+    }
+
     if (globalScope.EJS_ready === readyWrapper) {
       if (previousReady) {
         globalScope.EJS_ready = previousReady;
