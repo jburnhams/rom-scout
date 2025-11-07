@@ -215,7 +215,12 @@ export class IGDBClient {
       ? data.genres.map((g: any) => g.name)
       : undefined;
 
+    if (data.id === undefined || data.id === null) {
+      throw new Error('IGDB response missing required identifier field');
+    }
+
     return {
+      id: `IGDB${String(data.id)}`,
       title: data.name || 'Unknown',
       platform,
       year,

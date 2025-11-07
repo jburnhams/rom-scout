@@ -41,9 +41,230 @@ const EXTENSION_CORE_MAP: Record<string, string> = {
   'zip': 'arcade',
 };
 
+const SAVE_DATABASE_NAME = 'rom-scout-emulatorjs';
+const SAVE_STORE_NAME = 'saves';
+
+interface PersistedSaveRecord {
+  data: ArrayBuffer;
+  updatedAt: number;
+}
+
+let saveDatabasePromise: Promise<IDBDatabase | null> | null = null;
+
+function isIndexedDbAvailable(): boolean {
+  return typeof indexedDB !== 'undefined';
+}
+
+function openSaveDatabase(): Promise<IDBDatabase | null> {
+  if (!isIndexedDbAvailable()) {
+    return Promise.resolve(null);
+  }
+
+  if (!saveDatabasePromise) {
+    saveDatabasePromise = new Promise((resolve) => {
+      try {
+        const request = indexedDB.open(SAVE_DATABASE_NAME, 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(SAVE_STORE_NAME)) {
+            db.createObjectStore(SAVE_STORE_NAME);
+          }
+        };
+        request.onsuccess = () => {
+          resolve(request.result);
+        };
+        request.onerror = () => {
+          console.warn('Failed to open IndexedDB for EmulatorJS save persistence:', request.error);
+          resolve(null);
+        };
+        request.onblocked = () => {
+          resolve(null);
+        };
+      } catch (error) {
+        console.warn('Failed to initialise IndexedDB for EmulatorJS save persistence:', error);
+        resolve(null);
+      }
+    });
+  }
+
+  return saveDatabasePromise;
+}
+
+function toStoredBuffer(data: Uint8Array): ArrayBuffer {
+  if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength && data.buffer instanceof ArrayBuffer) {
+    return data.buffer.slice(0);
+  }
+  return data.slice().buffer;
+}
+
+async function writePersistedSave(romId: string, data: Uint8Array | null): Promise<void> {
+  const db = await openSaveDatabase();
+  if (!db) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    try {
+      const transaction = db.transaction(SAVE_STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(SAVE_STORE_NAME);
+      let request: IDBRequest;
+      if (data) {
+        const record: PersistedSaveRecord = {
+          data: toStoredBuffer(data),
+          updatedAt: Date.now(),
+        };
+        request = store.put(record, romId);
+      } else {
+        request = store.delete(romId);
+      }
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => {
+        console.warn('Failed to persist EmulatorJS save data:', request.error);
+        resolve();
+      };
+      transaction.onerror = () => {
+        console.warn('Failed to persist EmulatorJS save data:', transaction.error);
+        resolve();
+      };
+    } catch (error) {
+      console.warn('Unexpected error while writing EmulatorJS save data:', error);
+      resolve();
+    }
+  });
+}
+
+async function readPersistedSave(romId: string): Promise<Uint8Array | null> {
+  const db = await openSaveDatabase();
+  if (!db) {
+    return null;
+  }
+
+  return new Promise<Uint8Array | null>((resolve) => {
+    try {
+      const transaction = db.transaction(SAVE_STORE_NAME, 'readonly');
+      const store = transaction.objectStore(SAVE_STORE_NAME);
+      const request = store.get(romId);
+      request.onsuccess = () => {
+        const result = request.result as PersistedSaveRecord | ArrayBuffer | undefined;
+        if (!result) {
+          resolve(null);
+          return;
+        }
+
+        let buffer: ArrayBuffer | undefined;
+        if (result instanceof ArrayBuffer) {
+          buffer = result;
+        } else if (result && typeof result === 'object' && 'data' in result) {
+          buffer = result.data;
+        }
+
+        resolve(buffer ? new Uint8Array(buffer) : null);
+      };
+      request.onerror = () => {
+        console.warn('Failed to read EmulatorJS save data:', request.error);
+        resolve(null);
+      };
+    } catch (error) {
+      console.warn('Unexpected error while reading EmulatorJS save data:', error);
+      resolve(null);
+    }
+  });
+}
+
+function extractSavePayload(payload: unknown): Uint8Array | null {
+  if (!payload) {
+    return null;
+  }
+  if (payload instanceof Uint8Array) {
+    return payload;
+  }
+  if (payload instanceof ArrayBuffer) {
+    return new Uint8Array(payload);
+  }
+  if (typeof SharedArrayBuffer !== 'undefined' && payload instanceof SharedArrayBuffer) {
+    return new Uint8Array(payload);
+  }
+  if (ArrayBuffer.isView(payload)) {
+    const view = payload as ArrayBufferView;
+    const source = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    return new Uint8Array(source);
+  }
+  if (typeof payload === 'object' && 'save' in (payload as Record<string, unknown>)) {
+    return extractSavePayload((payload as Record<string, unknown>).save);
+  }
+  return null;
+}
+
+function writeSaveToFilesystem(emulator: EmulatorInstance, data: Uint8Array): boolean {
+  const manager = emulator.gameManager;
+  if (!manager || !manager.FS || typeof manager.getSaveFilePath !== 'function') {
+    return false;
+  }
+
+  const path = manager.getSaveFilePath();
+  if (!path) {
+    return false;
+  }
+
+  const fs = manager.FS;
+  try {
+    const segments = path.split('/');
+    let current = '';
+    for (let i = 0; i < segments.length - 1; i++) {
+      const segment = segments[i];
+      if (!segment) continue;
+      current += `/${segment}`;
+      try {
+        if (!fs.analyzePath(current).exists) {
+          fs.mkdir(current);
+        }
+      } catch {
+        // Ignore directory creation errors (likely already exists)
+      }
+    }
+
+    try {
+      if (fs.analyzePath(path).exists) {
+        fs.unlink(path);
+      }
+    } catch {
+      // ignore unlink failures
+    }
+
+    fs.writeFile(path, data);
+    return true;
+  } catch (error) {
+    console.warn('Failed to apply persisted EmulatorJS save data:', error);
+    return false;
+  }
+}
+
+type EmulatorEventHandler = (payload?: unknown) => void;
+
+interface EmulatorFilesystem {
+  analyzePath(path: string): { exists: boolean };
+  mkdir(path: string): void;
+  writeFile(path: string, data: Uint8Array): void;
+  unlink(path: string): void;
+}
+
+interface EmulatorGameManager {
+  FS?: EmulatorFilesystem;
+  getSaveFilePath?: () => string;
+  loadSaveFiles?: () => void;
+}
+
+interface EmulatorInstance {
+  on(event: string, callback: EmulatorEventHandler): void;
+  callEvent?: (eventName: string) => void;
+  destroy?: () => void;
+  gameManager?: EmulatorGameManager;
+}
+
 type EmulatorGlobal = typeof globalThis & {
   EJS_player?: string | null;
-  EJS_gameUrl?: string | null;
+  EJS_gameUrl?: string | Blob | null;
   EJS_core?: string | null;
   EJS_gameName?: string | null;
   EJS_biosUrl?: string | null;
@@ -51,10 +272,9 @@ type EmulatorGlobal = typeof globalThis & {
   EJS_startOnLoaded?: boolean;
   EJS_disableDatabases?: boolean;
   EJS_threads?: boolean;
-  EJS_emulator?: {
-    callEvent?: (eventName: string) => void;
-    destroy?: () => void;
-  } | null;
+  EJS_ready?: (() => void) | null;
+  EJS_onSaveUpdate?: ((payload: unknown) => void) | null;
+  EJS_emulator?: EmulatorInstance | null;
 };
 
 export interface RomPlayerOptions {
@@ -108,7 +328,7 @@ export interface RomPlayerInstance {
   /**
    * Object URL that EmulatorJS will load. Consumers should call `destroy()` to release it.
    */
-  gameUrl: string | File;
+  gameUrl: string | Blob;
   metadata?: Partial<RomMetadata>;
   filename?: string;
   destroy(): void;
@@ -192,7 +412,110 @@ function cleanupActivePlayer(): void {
   activePlayer = null;
 }
 
-function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string | File, gameName: string): HTMLScriptElement {
+
+function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): void {
+  if (!romId || !isIndexedDbAvailable()) {
+    return;
+  }
+
+  const globalScope = globalThis as EmulatorGlobal;
+  const previousReady = typeof globalScope.EJS_ready === 'function' ? globalScope.EJS_ready : null;
+  const previousSaveUpdate = typeof globalScope.EJS_onSaveUpdate === 'function' ? globalScope.EJS_onSaveUpdate : null;
+
+  let handlersAttached = false;
+  let hasPendingLoad = false;
+
+  const handleSavePayload = (payload: unknown) => {
+    const data = extractSavePayload(payload);
+    void writePersistedSave(romId, data);
+  };
+
+  const attachHandlers = () => {
+    if (handlersAttached) {
+      return;
+    }
+    const emulator = globalScope.EJS_emulator;
+    if (!emulator) {
+      return;
+    }
+    handlersAttached = true;
+
+    emulator.on('saveSaveFiles', handleSavePayload);
+    emulator.on('saveSave', handleSavePayload);
+
+    emulator.on('saveDatabaseLoaded', async () => {
+      try {
+        const existing = await readPersistedSave(romId);
+        if (existing && writeSaveToFilesystem(emulator, existing)) {
+          hasPendingLoad = true;
+        }
+      } catch (error) {
+        console.warn('Failed to restore persisted EmulatorJS save data:', error);
+      }
+    });
+
+    emulator.on('start', () => {
+      if (hasPendingLoad && emulator.gameManager && typeof emulator.gameManager.loadSaveFiles === 'function') {
+        try {
+          emulator.gameManager.loadSaveFiles();
+        } catch (error) {
+          console.warn('Failed to hydrate EmulatorJS save files:', error);
+        }
+      }
+      hasPendingLoad = false;
+    });
+  };
+
+  const readyWrapper = () => {
+    attachHandlers();
+    if (previousReady) {
+      try {
+        previousReady();
+      } catch (error) {
+        console.warn('Error in existing EmulatorJS ready callback:', error);
+      }
+    }
+  };
+
+  const saveUpdateWrapper = (payload: unknown) => {
+    handleSavePayload(payload);
+    if (previousSaveUpdate) {
+      try {
+        previousSaveUpdate(payload);
+      } catch (error) {
+        console.warn('Error in existing EmulatorJS save update callback:', error);
+      }
+    }
+  };
+
+  globalScope.EJS_ready = readyWrapper;
+  globalScope.EJS_onSaveUpdate = saveUpdateWrapper;
+
+  if (globalScope.EJS_emulator) {
+    attachHandlers();
+  }
+
+  const originalDestroy = instance.destroy.bind(instance);
+  instance.destroy = () => {
+    if (globalScope.EJS_ready === readyWrapper) {
+      if (previousReady) {
+        globalScope.EJS_ready = previousReady;
+      } else {
+        delete globalScope.EJS_ready;
+      }
+    }
+    if (globalScope.EJS_onSaveUpdate === saveUpdateWrapper) {
+      if (previousSaveUpdate) {
+        globalScope.EJS_onSaveUpdate = previousSaveUpdate;
+      } else {
+        delete globalScope.EJS_onSaveUpdate;
+      }
+    }
+    originalDestroy();
+  };
+}
+
+function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string | Blob, gameName: string): HTMLScriptElement {
   const globalScope = globalThis as EmulatorGlobal;
 
   const element = instance.element;
@@ -289,7 +612,7 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
         }
         if (instance.gameUrl) {
           const urlFactory = getUrlFactory();
-          if (urlFactory && typeof urlFactory.revokeObjectURL === 'function') {
+          if (typeof instance.gameUrl === 'string' && urlFactory && typeof urlFactory.revokeObjectURL === 'function') {
             try {
               urlFactory.revokeObjectURL(instance.gameUrl);
             } catch (error) {
@@ -303,6 +626,8 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
       }
     },
   };
+
+  setupPersistentSave(instance, options.metadata?.id);
 
   const script = applyEmulatorConfig(instance, options, core, gameUrl, displayName);
   instance.loaderScript = script;

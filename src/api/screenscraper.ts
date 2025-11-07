@@ -183,7 +183,20 @@ export class ScreenScraperClient {
     // Extract rating (ScreenScraper uses 0-20 scale, convert to 0-100)
     const rating = data.note ? Math.round(parseFloat(data.note) * 5) : undefined;
 
+    const sourceId =
+      data.id ??
+      data.idJeu ??
+      data.id_jeu ??
+      data.gameId ??
+      data.jeu?.id ??
+      data.jeu?.gameId;
+
+    if (sourceId === undefined || sourceId === null) {
+      throw new Error('ScreenScraper response missing required identifier field');
+    }
+
     return {
+      id: `SCREENSCRAPER${String(sourceId)}`,
       title: getText(data.noms) || 'Unknown',
       platform,
       year,
