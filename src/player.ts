@@ -449,6 +449,55 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
 
   let handlersAttached = false;
   let pendingSaveData: Uint8Array | null = null;
+  let pendingSaveCompletion: {
+    promise: Promise<void> | null;
+    resolve: (() => void) | null;
+    timeoutId: ReturnType<typeof setTimeout> | null;
+  } = {
+    promise: null,
+    resolve: null,
+    timeoutId: null,
+  };
+  let latestPersistedSave: Promise<void> | null = null;
+
+  const resetPendingSaveCompletion = () => {
+    if (pendingSaveCompletion.timeoutId != null) {
+      clearTimeout(pendingSaveCompletion.timeoutId);
+    }
+    pendingSaveCompletion = {
+      promise: null,
+      resolve: null,
+      timeoutId: null,
+    };
+  };
+
+  const ensurePendingSavePromise = (timeoutMs = 2500): Promise<void> => {
+    if (pendingSaveCompletion.promise) {
+      return pendingSaveCompletion.promise;
+    }
+
+    pendingSaveCompletion.promise = new Promise<void>((resolve) => {
+      pendingSaveCompletion.resolve = () => {
+        resolve();
+        resetPendingSaveCompletion();
+      };
+      pendingSaveCompletion.timeoutId = setTimeout(() => {
+        if (pendingSaveCompletion.resolve) {
+          pendingSaveCompletion.resolve();
+        }
+      }, timeoutMs);
+    });
+
+    return pendingSaveCompletion.promise;
+  };
+
+  const resolvePendingSavePromise = () => {
+    if (pendingSaveCompletion.resolve) {
+      pendingSaveCompletion.resolve();
+    } else {
+      resetPendingSaveCompletion();
+    }
+  };
 
   const handleSavePayload = (payload: unknown) => {
     console.log('[ROM Scout] Save event triggered for ROM:', romId);
@@ -458,7 +507,15 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
     } else {
       console.log('[ROM Scout] No save data extracted from payload');
     }
-    void writePersistedSave(romId, data);
+    const persistPromise = writePersistedSave(romId, data)
+      .catch((error) => {
+        console.warn('Failed to persist EmulatorJS save data:', error);
+      })
+      .finally(() => {
+        resolvePendingSavePromise();
+      });
+    latestPersistedSave = persistPromise;
+    void persistPromise;
   };
 
   const attachHandlers = () => {
@@ -509,6 +566,14 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
               console.warn('Failed to load EmulatorJS save files:', error);
             }
           }
+          if (typeof emulator.callEvent === 'function') {
+            try {
+              emulator.callEvent('load');
+              console.log('[ROM Scout] Triggered emulator load event after restoring save');
+            } catch (error) {
+              console.warn('Failed to trigger EmulatorJS load event:', error);
+            }
+          }
         }
         pendingSaveData = null;
       }
@@ -545,71 +610,104 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
   }
 
   const originalDestroy = instance.destroy.bind(instance);
+  let destroyInProgress: Promise<void> | null = null;
   instance.destroy = () => {
+    if (destroyInProgress) {
+      void destroyInProgress;
+      return;
+    }
+
     console.log('[ROM Scout] Destroying player instance for ROM:', romId);
 
-    // Explicitly save the current state before destroying
-    const emulator = globalScope.EJS_emulator;
-    if (emulator && emulator.gameManager) {
-      console.log('[ROM Scout] Attempting to save state before destroying...');
-      try {
-        // First, trigger the emulator to save its current state
-        if (typeof emulator.callEvent === 'function') {
-          console.log('[ROM Scout] Triggering emulator save event...');
-          try {
-            emulator.callEvent('save');
-            console.log('[ROM Scout] Save event triggered successfully');
-          } catch (error) {
-            console.warn('[ROM Scout] Failed to trigger save event:', error);
-          }
-        }
+    destroyInProgress = (async () => {
+      // Explicitly save the current state before destroying
+      const emulator = globalScope.EJS_emulator;
+      if (emulator && emulator.gameManager) {
+        console.log('[ROM Scout] Attempting to save state before destroying...');
+        try {
+          const waitForSave = ensurePendingSavePromise();
 
-        // Then read the save data from the emulator filesystem
-        const manager = emulator.gameManager;
-        if (manager.FS && typeof manager.getSaveFilePath === 'function') {
-          const savePath = manager.getSaveFilePath();
-          if (savePath) {
+          if (typeof emulator.callEvent === 'function') {
+            console.log('[ROM Scout] Triggering emulator save event...');
             try {
-              const fs = manager.FS;
-              if (fs.analyzePath(savePath).exists) {
-                const saveData = fs.readFile(savePath);
-                if (saveData && saveData.length > 0) {
-                  console.log('[ROM Scout] Read save data from filesystem before close, size:', saveData.length, 'bytes');
-                  // Trigger the save handler with the data
-                  handleSavePayload(saveData);
-                } else {
-                  console.log('[ROM Scout] No save data to persist on close');
-                }
-              } else {
-                console.log('[ROM Scout] No save file exists at path:', savePath);
-              }
+              emulator.callEvent('save');
+              console.log('[ROM Scout] Save event triggered successfully');
             } catch (error) {
-              console.warn('[ROM Scout] Failed to read save file before destroy:', error);
+              console.warn('[ROM Scout] Failed to trigger save event:', error);
+              resolvePendingSavePromise();
+            }
+          } else {
+            console.log('[ROM Scout] Emulator does not support callEvent for saving');
+            resolvePendingSavePromise();
+          }
+
+          // As a fallback, attempt to read the save file directly after the save event has been processed.
+          await waitForSave;
+
+          const manager = emulator.gameManager;
+          if (
+            manager.FS &&
+            typeof manager.getSaveFilePath === 'function' &&
+            typeof manager.FS.analyzePath === 'function' &&
+            typeof manager.FS.readFile === 'function'
+          ) {
+            const savePath = manager.getSaveFilePath();
+            if (savePath) {
+              try {
+                const fs = manager.FS;
+                if (fs.analyzePath(savePath).exists) {
+                  const saveData = fs.readFile(savePath);
+                  if (saveData && saveData.length > 0) {
+                    console.log('[ROM Scout] Read save data from filesystem before close, size:', saveData.length, 'bytes');
+                    handleSavePayload(saveData);
+                  } else {
+                    console.log('[ROM Scout] No save data to persist on close');
+                  }
+                } else {
+                  console.log('[ROM Scout] No save file exists at path:', savePath);
+                }
+              } catch (error) {
+                console.warn('[ROM Scout] Failed to read save file before destroy:', error);
+              }
+            }
+          } else {
+            console.log('[ROM Scout] Emulator filesystem not ready for manual save read');
+          }
+
+          if (latestPersistedSave) {
+            try {
+              await latestPersistedSave;
+            } catch {
+              // Errors already logged in handler
             }
           }
+        } catch (error) {
+          console.warn('[ROM Scout] Failed to save state before destroying:', error);
         }
-      } catch (error) {
-        console.warn('[ROM Scout] Failed to save state before destroying:', error);
+      } else {
+        console.log('[ROM Scout] No emulator instance available to save');
       }
-    } else {
-      console.log('[ROM Scout] No emulator instance available to save');
-    }
 
-    if (globalScope.EJS_ready === readyWrapper) {
-      if (previousReady) {
-        globalScope.EJS_ready = previousReady;
-      } else {
-        delete globalScope.EJS_ready;
+      if (globalScope.EJS_ready === readyWrapper) {
+        if (previousReady) {
+          globalScope.EJS_ready = previousReady;
+        } else {
+          delete globalScope.EJS_ready;
+        }
       }
-    }
-    if (globalScope.EJS_onSaveUpdate === saveUpdateWrapper) {
-      if (previousSaveUpdate) {
-        globalScope.EJS_onSaveUpdate = previousSaveUpdate;
-      } else {
-        delete globalScope.EJS_onSaveUpdate;
+      if (globalScope.EJS_onSaveUpdate === saveUpdateWrapper) {
+        if (previousSaveUpdate) {
+          globalScope.EJS_onSaveUpdate = previousSaveUpdate;
+        } else {
+          delete globalScope.EJS_onSaveUpdate;
+        }
       }
-    }
-    originalDestroy();
+
+      originalDestroy();
+      destroyInProgress = null;
+    })();
+
+    void destroyInProgress;
   };
 }
 
