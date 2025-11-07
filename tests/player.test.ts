@@ -201,208 +201,130 @@ describe('startRomPlayer', () => {
     const priorIndexedDB = globalAny.indexedDB;
     const priorEmulator = globalAny.EJS_emulator;
     const priorReady = globalAny.EJS_ready;
-    const priorSaveUpdate = globalAny.EJS_onSaveUpdate;
 
     let readyCallbackCount = 0;
     const previousReady = () => {
       readyCallbackCount += 1;
     };
 
-    let saveUpdateCallbackCount = 0;
-    const previousSaveUpdate = () => {
-      saveUpdateCallbackCount += 1;
-    };
-
     globalAny.indexedDB = indexedDB;
     globalAny.EJS_ready = previousReady;
-    globalAny.EJS_onSaveUpdate = previousSaveUpdate;
 
-    const eventHandlers = new Map<string, Array<(payload?: unknown) => void>>();
+    const loadStateCalls: Uint8Array[] = [];
+    let getStateCalls = 0;
+    const callEventHistory: string[] = [];
 
-    const emit = (event: string, payload?: unknown) => {
-      const handlers = eventHandlers.get(event);
-      if (handlers) {
-        for (const handler of handlers) {
-          handler(payload);
-        }
-      }
-    };
-
-    const files = new Map<string, Uint8Array>();
-    const directories = new Set<string>(['/']);
-    const filesystem = {
-      analyzePath(path: string) {
-        return { exists: directories.has(path) || files.has(path) };
-      },
-      mkdir(path: string) {
-        directories.add(path);
-      },
-      writeFile(path: string, data: Uint8Array) {
-        const copy = new Uint8Array(data);
-        files.set(path, copy);
-        directories.add(path);
-      },
-      unlink(path: string) {
-        files.delete(path);
-      },
-      readFile(path: string) {
-        const existing = files.get(path);
-        if (!existing) {
-          throw new Error(`File not found: ${path}`);
-        }
-        return new Uint8Array(existing);
-      },
-    } as const;
-
-    let loadSaveFilesCount = 0;
-    let loadEventCount = 0;
-    let manualSaveEventCount = 0;
-    let manualSavePayload = new Uint8Array([9, 8, 7]);
+    let stateToReturn = new Uint8Array([9, 8, 7]);
 
     const emulator = {
-      on(event: string, handler: (payload?: unknown) => void) {
-        const handlers = eventHandlers.get(event) ?? [];
-        handlers.push(handler);
-        eventHandlers.set(event, handlers);
-      },
       callEvent(event: string) {
-        if (event === 'save') {
-          manualSaveEventCount += 1;
-          emit('saveSave', manualSavePayload);
-        } else if (event === 'load') {
-          loadEventCount += 1;
-        }
+        callEventHistory.push(event);
       },
       gameManager: {
-        FS: filesystem,
-        getSaveFilePath: () => '/saves/test.sav',
-        loadSaveFiles: () => {
-          loadSaveFilesCount += 1;
+        getState: () => {
+          getStateCalls += 1;
+          return stateToReturn;
+        },
+        loadState: (state: Uint8Array) => {
+          const copy = new Uint8Array(state);
+          loadStateCalls.push(copy);
         },
       },
-    };
+    } as any;
 
     globalAny.EJS_emulator = emulator;
 
-    const container = createContainer('persist-target');
-    const romBlob = createBlob(new Uint8Array([0, 1, 2]));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
 
-    const instance = await startRomPlayer({
-      target: container,
-      file: romBlob,
-      filename: 'persistent.nes',
-      metadata: { id: romId, title: 'Persistent Game', platform: 'NES' },
-      loaderUrl: 'data:text/javascript,',
-      autoLoadLoaderScript: false,
-    });
+    const blob = new Blob(['fake rom'], { type: 'application/octet-stream' });
 
-    const readyWrapper = globalAny.EJS_ready as (() => void) | undefined;
-    const saveUpdateWrapper = globalAny.EJS_onSaveUpdate as ((payload: unknown) => void) | undefined;
-    assert.ok(typeof readyWrapper === 'function');
-    assert.ok(typeof saveUpdateWrapper === 'function');
+    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
 
-    const invokeReady = readyWrapper as () => void;
-    const invokeSaveUpdate = saveUpdateWrapper as (payload: unknown) => void;
+    try {
+      instance = await startRomPlayer({
+        target: container,
+        file: blob,
+        filename: 'indexeddb-test.nes',
+        metadata: { title: 'IndexedDB Test', id: romId },
+        loaderUrl: 'data:text/javascript,',
+        autoLoadLoaderScript: false,
+      });
 
-    invokeReady();
-    await flushMicrotasks();
-    assert.strictEqual(readyCallbackCount, 1);
+      const readyWrapper = globalAny.EJS_ready as (() => void) | undefined;
+      assert.ok(typeof readyWrapper === 'function');
+      assert.notStrictEqual(readyWrapper, previousReady, 'ready handler should be wrapped to manage persistence');
 
-    const databaseHandlers = eventHandlers.get('saveDatabaseLoaded');
-    assert.ok(databaseHandlers && databaseHandlers.length > 0, 'saveDatabaseLoaded handler should be registered');
-    databaseHandlers[0]();
-    await flushMicrotasks();
+      readyWrapper!();
+      await flushMicrotasks();
 
-    // After saveDatabaseLoaded, save should be read but not yet written to filesystem
-    let savedBuffer = files.get('/saves/test.sav');
-    assert.ok(!savedBuffer, 'save should not be written to filesystem yet (before start event)');
+      assert.strictEqual(readyCallbackCount, 1, 'previous ready handler should be invoked');
+      assert.strictEqual(loadStateCalls.length, 1, 'startup should restore persisted save');
+      assert.deepStrictEqual(Array.from(loadStateCalls[0]), Array.from(existingSave));
 
-    const startHandlers = eventHandlers.get('start');
-    assert.ok(startHandlers && startHandlers.length > 0, 'start handler should be registered');
-    startHandlers[0]();
-    await flushMicrotasks();
+      stateToReturn = new Uint8Array([4, 5, 6, 7]);
+      const manualSaveResult = await instance.persistSave();
+      await flushMicrotasks();
 
-    // After start event, save should be written to filesystem and loaded into game
-    savedBuffer = files.get('/saves/test.sav');
-    assert.ok(savedBuffer, 'persisted save data should be written to the filesystem after start event');
-    assert.deepStrictEqual(Array.from(savedBuffer!), Array.from(existingSave));
-    assert.strictEqual(loadSaveFilesCount, 1, 'loadSaveFiles should be invoked after startup');
-    assert.strictEqual(loadEventCount, 1, 'load event should trigger after startup restore');
+      assert.strictEqual(manualSaveResult, true, 'persistSave should report success when data is captured');
+      assert.strictEqual(getStateCalls, 1, 'manual save should call gameManager.getState exactly once');
+      const postManualRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
+      assert.ok(postManualRecord, 'Manual save should write to IndexedDB');
+      assert.deepStrictEqual(Array.from(new Uint8Array(postManualRecord.data)), Array.from(stateToReturn));
 
-    const saveHandlers = eventHandlers.get('saveSave');
-    assert.ok(saveHandlers && saveHandlers.length > 0, 'save handler should be registered');
-    const newSave = new Uint8Array([9, 8, 7]);
-    saveHandlers[0](newSave);
-    await flushMicrotasks();
+      const manualLoadData = new Uint8Array([11, 12, 13, 14]);
+      savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
+      const manualLoadResult = await instance.loadLatestSave();
+      await flushMicrotasks();
 
-    const firstRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
-    assert.ok(firstRecord, 'IndexedDB should receive save data from emulator events');
-    assert.deepStrictEqual(Array.from(new Uint8Array(firstRecord.data)), Array.from(newSave));
+      assert.strictEqual(manualLoadResult, true, 'loadLatestSave should restore when data exists');
+      assert.strictEqual(loadStateCalls.length, 2, 'manual load should call gameManager.loadState');
+      assert.deepStrictEqual(Array.from(loadStateCalls[1]), Array.from(manualLoadData));
 
-    const alternateSave = new Uint8Array([5, 4, 3, 2]);
-    invokeSaveUpdate(alternateSave);
-    await flushMicrotasks();
+      stateToReturn = new Uint8Array([21, 22, 23]);
+      await instance.destroy();
+      await flushMicrotasks();
 
-    const updatedRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
-    assert.ok(updatedRecord, 'IndexedDB should be updated when save callbacks fire');
-    assert.deepStrictEqual(Array.from(new Uint8Array(updatedRecord.data)), Array.from(alternateSave));
-    assert.strictEqual(saveUpdateCallbackCount, 1, 'previous save update handler should be invoked');
+      assert.strictEqual(getStateCalls, 2, 'destroy should persist the latest state');
+      const finalRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
+      assert.ok(finalRecord, 'Destroy should update the persisted save');
+      assert.deepStrictEqual(Array.from(new Uint8Array(finalRecord.data)), Array.from(stateToReturn));
+      assert.ok(!callEventHistory.includes('load'), 'load events should not be triggered when loadState succeeds');
 
-    manualSavePayload = new Uint8Array([4, 5, 6, 7]);
-    const manualSaveResult = await instance.persistSave();
-    assert.strictEqual(manualSaveResult, true, 'persistSave should report success when data is captured');
-    await flushMicrotasks();
-    const postManualRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
-    assert.ok(postManualRecord, 'Manual save should write to IndexedDB');
-    assert.deepStrictEqual(Array.from(new Uint8Array(postManualRecord.data)), Array.from(manualSavePayload));
-    assert.strictEqual(manualSaveEventCount, 1, 'persistSave should trigger emulator save event');
+      const readyAfterDestroy = globalAny.EJS_ready;
+      assert.strictEqual(readyAfterDestroy, previousReady, 'destroy should restore previous ready handler');
+    } finally {
+      if (instance) {
+        try {
+          await instance.destroy();
+        } catch {
+          // ignore errors from double destruction
+        }
+      }
 
-    const manualLoadData = new Uint8Array([11, 12, 13, 14]);
-    savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
-    files.delete('/saves/test.sav');
-    const manualLoadResult = await instance.loadLatestSave();
-    assert.strictEqual(manualLoadResult, true, 'loadLatestSave should restore when data exists');
-    await flushMicrotasks();
-    const restoredManualBuffer = files.get('/saves/test.sav');
-    assert.ok(restoredManualBuffer, 'Manual load should write save data to filesystem');
-    assert.deepStrictEqual(Array.from(restoredManualBuffer!), Array.from(manualLoadData));
-    assert.strictEqual(loadSaveFilesCount, 2, 'loadSaveFiles should be invoked during manual load');
-    assert.strictEqual(loadEventCount, 2, 'manual load should trigger emulator load event');
+      container.remove();
 
-    await instance.destroy();
-    await flushMicrotasks();
+      if (priorIndexedDB === undefined) {
+        delete globalAny.indexedDB;
+      } else {
+        globalAny.indexedDB = priorIndexedDB;
+      }
 
-    const readyAfterDestroy = globalAny.EJS_ready;
-    const saveAfterDestroy = globalAny.EJS_onSaveUpdate;
+      if (priorEmulator === undefined) {
+        delete globalAny.EJS_emulator;
+      } else {
+        globalAny.EJS_emulator = priorEmulator;
+      }
 
-    if (priorIndexedDB === undefined) {
-      delete globalAny.indexedDB;
-    } else {
-      globalAny.indexedDB = priorIndexedDB;
+      if (priorReady === undefined) {
+        delete globalAny.EJS_ready;
+      } else {
+        globalAny.EJS_ready = priorReady;
+      }
     }
-
-    if (priorEmulator === undefined) {
-      delete globalAny.EJS_emulator;
-    } else {
-      globalAny.EJS_emulator = priorEmulator;
-    }
-
-    if (priorReady === undefined) {
-      delete globalAny.EJS_ready;
-    } else {
-      globalAny.EJS_ready = priorReady;
-    }
-
-    if (priorSaveUpdate === undefined) {
-      delete globalAny.EJS_onSaveUpdate;
-    } else {
-      globalAny.EJS_onSaveUpdate = priorSaveUpdate;
-    }
-
-    assert.strictEqual(readyAfterDestroy, previousReady, 'destroy should restore previous ready handler');
-    assert.strictEqual(saveAfterDestroy, previousSaveUpdate, 'destroy should restore previous save update handler');
   });
 });
+
 
 type FakeSaveRecord = { data: ArrayBuffer; updatedAt: number };
 
