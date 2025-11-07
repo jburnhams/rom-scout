@@ -140,7 +140,12 @@ async function writePersistedSave(romId: string, data: Uint8Array | null): Promi
   });
 }
 
-async function readPersistedSave(romId: string): Promise<Uint8Array | null> {
+interface StoredSaveData {
+  data: Uint8Array;
+  updatedAt: number | null;
+}
+
+async function readPersistedSave(romId: string): Promise<StoredSaveData | null> {
   const db = await openSaveDatabase();
   if (!db) {
     console.log('[ROM Scout] IndexedDB not available, cannot read save');
@@ -149,7 +154,7 @@ async function readPersistedSave(romId: string): Promise<Uint8Array | null> {
 
   console.log('[ROM Scout] Reading save from IndexedDB for ROM:', romId);
 
-  return new Promise<Uint8Array | null>((resolve) => {
+  return new Promise<StoredSaveData | null>((resolve) => {
     try {
       const transaction = db.transaction(SAVE_STORE_NAME, 'readonly');
       const store = transaction.objectStore(SAVE_STORE_NAME);
@@ -163,19 +168,32 @@ async function readPersistedSave(romId: string): Promise<Uint8Array | null> {
         }
 
         let buffer: ArrayBuffer | undefined;
+        let updatedAt: number | null = null;
         if (result instanceof ArrayBuffer) {
           buffer = result;
         } else if (result && typeof result === 'object' && 'data' in result) {
           buffer = result.data;
+          if ('updatedAt' in result && typeof result.updatedAt === 'number') {
+            updatedAt = Number.isFinite(result.updatedAt) ? result.updatedAt : null;
+          }
         }
 
         const saveData = buffer ? new Uint8Array(buffer) : null;
         if (saveData) {
-          console.log('[ROM Scout] Successfully read save from IndexedDB for ROM:', romId, 'size:', saveData.length, 'bytes');
+          console.log(
+            '[ROM Scout] Successfully read save from IndexedDB for ROM:',
+            romId,
+            'size:',
+            saveData.length,
+            'bytes',
+            'updatedAt:',
+            updatedAt
+          );
+          resolve({ data: saveData, updatedAt });
         } else {
           console.log('[ROM Scout] Save data found but could not be converted for ROM:', romId);
+          resolve(null);
         }
-        resolve(saveData);
       };
       request.onerror = () => {
         console.warn('Failed to read EmulatorJS save data:', request.error);
@@ -472,8 +490,16 @@ function cleanupActivePlayer(): Promise<void> {
 }
 
 
-function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): void {
-  const romLabel = romId ?? 'unknown ROM';
+function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partial<RomMetadata>): void {
+  const romLabel = metadata?.title ?? metadata?.id ?? metadata?.persistId ?? 'unknown ROM';
+
+  const persistenceKeys = Array.from(
+    new Set(
+      [metadata?.persistId, metadata?.id, ...(metadata?.alternateIds ?? [])]
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
 
   instance.persistSave = async () => {
     console.log('[ROM Scout] Manual save requested but persistence is not available for ROM:', romLabel);
@@ -485,12 +511,13 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
     return false;
   };
 
-  if (!romId || !isIndexedDbAvailable()) {
-    console.log('[ROM Scout] Persistent save not configured:', !romId ? 'no ROM ID' : 'IndexedDB not available');
+  if (persistenceKeys.length === 0 || !isIndexedDbAvailable()) {
+    const reason = persistenceKeys.length === 0 ? 'no persistence keys' : 'IndexedDB not available';
+    console.log('[ROM Scout] Persistent save not configured:', reason, 'for ROM:', romLabel);
     return;
   }
 
-  console.log('[ROM Scout] Setting up persistent save for ROM:', romId);
+  console.log('[ROM Scout] Setting up persistent save for ROM:', romLabel, 'keys:', persistenceKeys.join(', '));
 
   const globalScope = globalThis as EmulatorGlobal;
   const previousReady = typeof globalScope.EJS_ready === 'function' ? globalScope.EJS_ready : null;
@@ -499,22 +526,22 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
   let destroyInProgress: Promise<void> | null = null;
   let startupLoadAttempted = false;
 
-  const applyPendingState = (reason: string): boolean => {
+  const applyPendingState = (reason: string): 'restored' | 'queued' | 'failed' => {
     if (!pendingState || pendingState.length === 0) {
-      console.log('[ROM Scout] No pending save state to restore for ROM:', romId, 'reason:', reason);
-      return false;
+      console.log('[ROM Scout] No pending save state to restore for ROM:', romLabel, 'reason:', reason);
+      return 'failed';
     }
 
     const emulator = globalScope.EJS_emulator;
     if (!emulator) {
-      console.log('[ROM Scout] Emulator not ready to restore save for ROM:', romId, 'reason:', reason);
-      return false;
+      console.log('[ROM Scout] Emulator not ready to restore save for ROM:', romLabel, 'reason:', reason);
+      return 'queued';
     }
 
     const manager = emulator.gameManager;
     if (!manager) {
-      console.log('[ROM Scout] Emulator game manager unavailable for ROM:', romId, 'reason:', reason);
-      return false;
+      console.log('[ROM Scout] Emulator game manager unavailable for ROM:', romLabel, 'reason:', reason);
+      return 'queued';
     }
 
     let restored = false;
@@ -524,9 +551,9 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
         const stateCopy = toUint8Array(pendingState);
         manager.loadState(stateCopy);
         restored = true;
-        console.log('[ROM Scout] Restored save using gameManager.loadState for ROM:', romId, 'reason:', reason);
+        console.log('[ROM Scout] Restored save using gameManager.loadState for ROM:', romLabel, 'reason:', reason);
       } catch (error) {
-        console.warn('[ROM Scout] Failed to restore save via gameManager.loadState for ROM:', romId, 'reason:', reason, error);
+        console.warn('[ROM Scout] Failed to restore save via gameManager.loadState for ROM:', romLabel, 'reason:', reason, error);
       }
     }
 
@@ -534,9 +561,9 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
       try {
         manager.setState(pendingState);
         restored = true;
-        console.log('[ROM Scout] Restored save using gameManager.setState for ROM:', romId, 'reason:', reason);
+        console.log('[ROM Scout] Restored save using gameManager.setState for ROM:', romLabel, 'reason:', reason);
       } catch (error) {
-        console.warn('[ROM Scout] Failed to restore save via gameManager.setState for ROM:', romId, 'reason:', reason, error);
+        console.warn('[ROM Scout] Failed to restore save via gameManager.setState for ROM:', romLabel, 'reason:', reason, error);
       }
     }
 
@@ -558,54 +585,83 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
             console.warn('Failed to trigger EmulatorJS load event after filesystem restore:', error);
           }
         }
-        console.log('[ROM Scout] Restored save using filesystem fallback for ROM:', romId, 'reason:', reason);
+        console.log('[ROM Scout] Restored save using filesystem fallback for ROM:', romLabel, 'reason:', reason);
       } else {
-        console.log('[ROM Scout] Failed to restore save via filesystem fallback for ROM:', romId, 'reason:', reason);
+        console.log('[ROM Scout] Failed to restore save via filesystem fallback for ROM:', romLabel, 'reason:', reason);
       }
     }
 
     if (restored) {
       pendingState = null;
+      return 'restored';
     }
 
-    return restored;
+    pendingState = null;
+    return 'failed';
   };
 
   const loadPersistedState = async (reason: string): Promise<boolean> => {
-    console.log('[ROM Scout] Loading persisted save for ROM:', romId, 'reason:', reason);
-    try {
-      const existing = await readPersistedSave(romId);
-      if (!existing || existing.length === 0) {
-        pendingState = null;
-        console.log('[ROM Scout] No persisted save data available for ROM:', romId);
+    console.log('[ROM Scout] Loading persisted save for ROM:', romLabel, 'reason:', reason, 'keys:', persistenceKeys.join(', '));
+
+    const candidates: Array<{ key: string; data: Uint8Array; updatedAt: number | null }> = [];
+
+    for (const key of persistenceKeys) {
+      try {
+        const existing = await readPersistedSave(key);
+        if (!existing || existing.data.length === 0) {
+          continue;
+        }
+
+        candidates.push({ key, data: new Uint8Array(existing.data), updatedAt: existing.updatedAt });
+      } catch (error) {
+        console.warn('[ROM Scout] Failed to read persisted save data for ROM:', romLabel, 'key:', key, 'reason:', reason, error);
+      }
+    }
+
+    if (candidates.length === 0) {
+      pendingState = null;
+      console.log('[ROM Scout] No persisted save data available for ROM:', romLabel, 'after checking keys:', persistenceKeys.join(', '));
+      return false;
+    }
+
+    candidates.sort((a, b) => {
+      const aTime = typeof a.updatedAt === 'number' ? a.updatedAt : -Infinity;
+      const bTime = typeof b.updatedAt === 'number' ? b.updatedAt : -Infinity;
+      return bTime - aTime;
+    });
+
+    for (const candidate of candidates) {
+      pendingState = new Uint8Array(candidate.data);
+      const outcome = applyPendingState(reason);
+      if (outcome === 'restored') {
+        console.log('[ROM Scout] Persisted save applied for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', candidate.updatedAt);
+        return true;
+      }
+
+      if (outcome === 'queued') {
+        console.log('[ROM Scout] Persisted save queued until emulator ready for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', candidate.updatedAt);
         return false;
       }
 
-      pendingState = new Uint8Array(existing);
-      const restored = applyPendingState(reason);
-      if (restored) {
-        console.log('[ROM Scout] Persisted save applied for ROM:', romId, 'reason:', reason);
-      } else {
-        console.log('[ROM Scout] Persisted save queued until emulator ready for ROM:', romId, 'reason:', reason);
-      }
-      return restored;
-    } catch (error) {
+      console.log('[ROM Scout] Persisted save failed for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', candidate.updatedAt, 'trying next most recent');
       pendingState = null;
-      console.warn('[ROM Scout] Failed to read persisted save data for ROM:', romId, 'reason:', reason, error);
-      return false;
     }
+
+    pendingState = null;
+    console.log('[ROM Scout] Unable to restore persisted save for ROM:', romLabel, 'after trying keys by recency:', persistenceKeys.join(', '));
+    return false;
   };
 
   const persistState = async (reason: string): Promise<boolean> => {
     const emulator = globalScope.EJS_emulator;
     if (!emulator) {
-      console.log('[ROM Scout] No emulator instance available to save for ROM:', romId, 'reason:', reason);
+      console.log('[ROM Scout] No emulator instance available to save for ROM:', romLabel, 'reason:', reason);
       return false;
     }
 
     const manager = emulator.gameManager;
     if (!manager || typeof manager.getState !== 'function') {
-      console.log('[ROM Scout] Emulator does not expose getState for ROM:', romId, 'reason:', reason);
+      console.log('[ROM Scout] Emulator does not expose getState for ROM:', romLabel, 'reason:', reason);
       return false;
     }
 
@@ -614,18 +670,20 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
       const payload = manager.getState();
       stateData = extractSavePayload(payload);
     } catch (error) {
-      console.warn('[ROM Scout] Failed to capture save state via gameManager.getState for ROM:', romId, 'reason:', reason, error);
+      console.warn('[ROM Scout] Failed to capture save state via gameManager.getState for ROM:', romLabel, 'reason:', reason, error);
       return false;
     }
 
     if (!stateData || stateData.length === 0) {
-      console.log('[ROM Scout] No save state data returned for ROM:', romId, 'reason:', reason);
+      console.log('[ROM Scout] No save state data returned for ROM:', romLabel, 'reason:', reason);
       return false;
     }
 
     try {
-      await writePersistedSave(romId, stateData);
-      console.log('[ROM Scout] Persisted save state for ROM:', romId, 'bytes:', stateData.length, 'reason:', reason);
+      for (const key of persistenceKeys) {
+        await writePersistedSave(key, stateData);
+      }
+      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'keys:', persistenceKeys.join(', '));
       return true;
     } catch (error) {
       console.warn('Failed to persist EmulatorJS save data:', error);
@@ -651,9 +709,9 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
     }
 
     if (pendingState) {
-      const restored = applyPendingState('ready');
-      if (!restored) {
-        console.log('[ROM Scout] Save data still pending after ready event for ROM:', romId);
+      const outcome = applyPendingState('ready');
+      if (outcome !== 'restored') {
+        console.log('[ROM Scout] Save data still pending after ready event for ROM:', romLabel, 'status:', outcome);
       }
     } else {
       triggerStartupLoad('startup');
@@ -667,12 +725,12 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
   }
 
   instance.persistSave = async () => {
-    console.log('[ROM Scout] Manual save requested for ROM:', romId);
+    console.log('[ROM Scout] Manual save requested for ROM:', romLabel);
     return persistState('manual');
   };
 
   instance.loadLatestSave = async () => {
-    console.log('[ROM Scout] Manual load requested for ROM:', romId);
+    console.log('[ROM Scout] Manual load requested for ROM:', romLabel);
     return loadPersistedState('manual');
   };
 
@@ -682,7 +740,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
       return destroyInProgress;
     }
 
-    console.log('[ROM Scout] Destroying player instance for ROM:', romId);
+    console.log('[ROM Scout] Destroying player instance for ROM:', romLabel);
 
     const destroyPromise = (async () => {
       try {
@@ -822,7 +880,7 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
     loadLatestSave: async () => false,
   };
 
-  setupPersistentSave(instance, options.metadata?.id);
+  setupPersistentSave(instance, options.metadata);
 
   const script = applyEmulatorConfig(instance, options, core, gameUrl, displayName);
   instance.loaderScript = script;

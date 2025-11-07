@@ -194,8 +194,9 @@ describe('startRomPlayer', () => {
     const savesStore = getStore('saves');
 
     const romId = 'HASHEOUS1234';
+    const persistId = 'SHA1-FAKE-HASH';
     const existingSave = new Uint8Array([1, 2, 3, 4]);
-    savesStore.set(romId, { data: existingSave.buffer.slice(0), updatedAt: Date.now() });
+    savesStore.set(persistId, { data: existingSave.buffer.slice(0), updatedAt: Date.now() });
 
     const globalAny = globalThis as any;
     const priorIndexedDB = globalAny.indexedDB;
@@ -247,7 +248,7 @@ describe('startRomPlayer', () => {
         target: container,
         file: blob,
         filename: 'indexeddb-test.nes',
-        metadata: { title: 'IndexedDB Test', id: romId },
+        metadata: { title: 'IndexedDB Test', id: romId, persistId, alternateIds: ['legacy-id'] },
         loaderUrl: 'data:text/javascript,',
         autoLoadLoaderScript: false,
       });
@@ -270,9 +271,12 @@ describe('startRomPlayer', () => {
 
       assert.strictEqual(manualSaveResult, true, 'persistSave should report success when data is captured');
       assert.strictEqual(getStateCalls, 1, 'manual save should call gameManager.getState exactly once');
-      const postManualRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
-      assert.ok(postManualRecord, 'Manual save should write to IndexedDB');
-      assert.deepStrictEqual(Array.from(new Uint8Array(postManualRecord.data)), Array.from(stateBytes));
+      const postManualPrimary = savesStore.get(persistId) as FakeSaveRecord | undefined;
+      const postManualSecondary = savesStore.get(romId) as FakeSaveRecord | undefined;
+      assert.ok(postManualPrimary, 'Manual save should write to IndexedDB using persistId');
+      assert.ok(postManualSecondary, 'Manual save should mirror data under ROM id');
+      assert.deepStrictEqual(Array.from(new Uint8Array(postManualPrimary!.data)), Array.from(stateBytes));
+      assert.deepStrictEqual(Array.from(new Uint8Array(postManualSecondary!.data)), Array.from(stateBytes));
 
       const manualLoadData = new Uint8Array([11, 12, 13, 14]);
       savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
@@ -289,9 +293,12 @@ describe('startRomPlayer', () => {
       await flushMicrotasks();
 
       assert.strictEqual(getStateCalls, 2, 'destroy should persist the latest state');
-      const finalRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
-      assert.ok(finalRecord, 'Destroy should update the persisted save');
-      assert.deepStrictEqual(Array.from(new Uint8Array(finalRecord.data)), Array.from(stateBytes));
+      const finalPrimary = savesStore.get(persistId) as FakeSaveRecord | undefined;
+      const finalSecondary = savesStore.get(romId) as FakeSaveRecord | undefined;
+      assert.ok(finalPrimary, 'Destroy should update the persisted save primary key');
+      assert.ok(finalSecondary, 'Destroy should update the persisted save secondary key');
+      assert.deepStrictEqual(Array.from(new Uint8Array(finalPrimary!.data)), Array.from(stateBytes));
+      assert.deepStrictEqual(Array.from(new Uint8Array(finalSecondary!.data)), Array.from(stateBytes));
       assert.ok(!callEventHistory.includes('load'), 'load events should not be triggered when loadState succeeds');
 
       const readyAfterDestroy = globalAny.EJS_ready;

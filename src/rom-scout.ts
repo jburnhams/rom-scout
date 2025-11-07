@@ -159,6 +159,7 @@ export class RomScout {
         }
 
         if (metadata) {
+          metadata = this.attachPersistenceIds(metadata, hashes);
           // Create a unique key for this ROM (use title + platform + publisher)
           const romKey = `${metadata.title}|${metadata.platform || ''}|${metadata.publisher || ''}`;
 
@@ -202,13 +203,39 @@ export class RomScout {
     try {
       const metadata = await this.lookup(request);
       if (metadata) {
-        return metadata;
+        return this.attachPersistenceIds(metadata, fileHashes);
       }
     } catch (error) {
       console.warn('Failed to lookup metadata from provider, using fallback hash metadata:', error);
     }
 
     return this.createFallbackMetadata(fileHashes, filename);
+  }
+
+  private attachPersistenceIds(metadata: RomMetadata, hashes: HashResult): RomMetadata {
+    const persistId = hashes.sha1 ?? hashes.md5 ?? hashes.crc32;
+    if (!persistId) {
+      return metadata;
+    }
+
+    const alternateIds = new Set<string>();
+    if (Array.isArray(metadata.alternateIds)) {
+      for (const id of metadata.alternateIds) {
+        if (typeof id === 'string' && id.trim()) {
+          alternateIds.add(id);
+        }
+      }
+    }
+    if (metadata.id) {
+      alternateIds.add(metadata.id);
+    }
+    alternateIds.add(persistId);
+
+    return {
+      ...metadata,
+      persistId,
+      alternateIds: Array.from(alternateIds),
+    };
   }
 
   private createFallbackMetadata(hashes: HashResult, filename?: string): RomMetadata | null {
@@ -221,6 +248,8 @@ export class RomScout {
 
     return {
       id: fallbackId,
+      persistId: fallbackId,
+      alternateIds: [fallbackId],
       title,
       source: 'local-hash',
       raw: {
