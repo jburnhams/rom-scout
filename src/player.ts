@@ -547,7 +547,18 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
     if (emulator && emulator.gameManager) {
       console.log('[ROM Scout] Attempting to save state before destroying...');
       try {
-        // Try to get save data from the emulator filesystem
+        // First, trigger the emulator to save its current state
+        if (typeof emulator.callEvent === 'function') {
+          console.log('[ROM Scout] Triggering emulator save event...');
+          try {
+            emulator.callEvent('save');
+            console.log('[ROM Scout] Save event triggered successfully');
+          } catch (error) {
+            console.warn('[ROM Scout] Failed to trigger save event:', error);
+          }
+        }
+
+        // Then read the save data from the emulator filesystem
         const manager = emulator.gameManager;
         if (manager.FS && typeof manager.getSaveFilePath === 'function') {
           const savePath = manager.getSaveFilePath();
