@@ -35,6 +35,10 @@ export type { HashType, HashResult } from './hash.js';
 export { isZipArchive, isArchiveFilename, extractZipFiles } from './archive.js';
 export type { ExtractedFile } from './archive.js';
 
+// Player utilities
+export { startRomPlayer, detectEmulatorCore } from './player.js';
+export type { RomPlayerOptions, RomPlayerInstance } from './player.js';
+
 // API clients
 export { HasheousClient } from './api/hasheous.js';
 export { IGDBClient } from './api/igdb.js';

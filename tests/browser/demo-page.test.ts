@@ -184,7 +184,9 @@ describe('Demo Page - Browser Environment Simulation', () => {
       'ScreenScraperClient',
       'isZipArchive',
       'isArchiveFilename',
-      'extractZipFiles'
+      'extractZipFiles',
+      'startRomPlayer',
+      'detectEmulatorCore'
     ];
 
     for (const exportName of expectedExports) {

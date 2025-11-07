@@ -53,6 +53,8 @@ describe('Browser Bundle Tests', () => {
     assert.strictEqual(typeof globalApi.HasheousClient, 'function', 'Should export HasheousClient class');
     assert.strictEqual(typeof globalApi.IGDBClient, 'function', 'Should export IGDBClient class');
     assert.strictEqual(typeof globalApi.ScreenScraperClient, 'function', 'Should export ScreenScraperClient class');
+    assert.strictEqual(typeof globalApi.startRomPlayer, 'function', 'Should export startRomPlayer function');
+    assert.strictEqual(typeof globalApi.detectEmulatorCore, 'function', 'Should export detectEmulatorCore function');
   });
 
   test('ESM bundle can be imported directly', async () => {
@@ -66,6 +68,8 @@ describe('Browser Bundle Tests', () => {
     assert.strictEqual(typeof mod.HasheousClient, 'function', 'Should export HasheousClient class');
     assert.strictEqual(typeof mod.IGDBClient, 'function', 'Should export IGDBClient class');
     assert.strictEqual(typeof mod.ScreenScraperClient, 'function', 'Should export ScreenScraperClient class');
+    assert.strictEqual(typeof mod.startRomPlayer, 'function', 'Should export startRomPlayer function');
+    assert.strictEqual(typeof mod.detectEmulatorCore, 'function', 'Should export detectEmulatorCore function');
   });
 
   test('bundle size is reasonable', () => {
@@ -141,5 +145,7 @@ describe('Functional Tests - Verify Bundle Works Correctly', () => {
     assert.strictEqual(typeof api.HasheousClient, 'function', 'HasheousClient should be a constructor');
     assert.strictEqual(typeof api.IGDBClient, 'function', 'IGDBClient should be a constructor');
     assert.strictEqual(typeof api.ScreenScraperClient, 'function', 'ScreenScraperClient should be a constructor');
+    assert.strictEqual(typeof api.startRomPlayer, 'function', 'startRomPlayer should be exported');
+    assert.strictEqual(typeof api.detectEmulatorCore, 'function', 'detectEmulatorCore should be exported');
   });
 });

@@ -3,12 +3,12 @@
  */
 
 // Import the library from local build
-let RomScout, extractZipFiles;
-let activeLoaderScript = null;
+let RomScout, startRomPlayer;
+let activePlayerInstance = null;
 try {
   const module = await import('./rom-scout.esm.js');
   RomScout = module.RomScout;
-  extractZipFiles = module.extractZipFiles;
+  startRomPlayer = module.startRomPlayer;
   console.log('Loaded rom-scout from local build');
 } catch (error) {
   console.error('Failed to load rom-scout library:', error);
@@ -18,7 +18,6 @@ try {
 
 // ROM storage
 const roms = [];
-let currentGameUrl = null;
 
 // Initialize RomScout with Hasheous
 const scout = new RomScout({
@@ -244,84 +243,37 @@ async function playRom(rom) {
     const core = detectPlatform(rom.filename, rom.metadata);
     console.log('Using core:', core);
 
-    // Handle ZIP files - extract contents for arcade ROMs
-    let gameData;
-    let isZip = rom.filename.toLowerCase().endsWith('.zip');
-
-    if (isZip && core === 'arcade') {
-      // For arcade, we can pass the ZIP directly as a romset
-      gameData = rom.file;
-    } else if (isZip) {
-      // For other emulators, extract the first ROM file
-      console.log('Extracting ZIP file...');
-      const arrayBuffer = await rom.file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      const files = extractZipFiles(uint8Array);
-
-      if (files.length === 0) {
-        throw new Error('No files found in ZIP archive');
-      }
-
-      console.log('Extracted files:', files.map(f => f.name));
-
-      // Find the first ROM file (not a directory or metadata)
-      const romFile = files.find(f =>
-        !f.name.endsWith('/') &&
-        !f.name.startsWith('__MACOSX') &&
-        /\.(bin|nes|snes|gba|gb|gbc|smd|md|gen|sms|gg)$/i.test(f.name)
-      ) || files[0];
-
-      // Create a blob from the extracted file
-      gameData = new Blob([romFile.data], { type: 'application/octet-stream' });
-      console.log('Using extracted file:', romFile.name);
-    } else {
-      gameData = rom.file;
-    }
-
-    // Clean up previous game URL
-    if (currentGameUrl) {
-      URL.revokeObjectURL(currentGameUrl);
-      currentGameUrl = null;
-    }
-
-    // Create object URL for the game
-    const gameUrl = gameData;
-    currentGameUrl = gameUrl;
-
     // Show emulator overlay
     const overlay = document.getElementById('emulator-overlay');
     overlay.classList.add('active');
 
     // Clear previous emulator
     const emulatorDiv = document.getElementById('emulator-div');
-    emulatorDiv.innerHTML = '';
-
-    // Set EmulatorJS configuration
-    window.EJS_player = '#emulator-div';
-    window.EJS_gameUrl = gameUrl;
-    window.EJS_core = core;
-    window.EJS_gameName = rom.title;
-    window.EJS_biosUrl = '';
-    window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
-    window.EJS_startOnLoaded = true;
-    window.EJS_disableDatabases = true;
-    window.EJS_threads = false;
-
-    // Reload EmulatorJS using the latest stable CDN
-    if (activeLoaderScript) {
-      activeLoaderScript.remove();
-      activeLoaderScript = null;
+    const metadata = rom.metadata ? { ...rom.metadata } : {};
+    if (!metadata.title) {
+      metadata.title = rom.title;
+    }
+    if (!metadata.platform && rom.platform) {
+      metadata.platform = rom.platform;
     }
 
-    const script = document.createElement('script');
-    script.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
-    script.async = true;
-    script.onerror = () => {
-      activeLoaderScript = null;
-      alert('Failed to load EmulatorJS resources. Please try again later.');
-    };
-    document.body.appendChild(script);
-    activeLoaderScript = script;
+    if (activePlayerInstance) {
+      activePlayerInstance.destroy();
+      activePlayerInstance = null;
+    }
+
+    activePlayerInstance = await startRomPlayer({
+      target: emulatorDiv,
+      file: rom.file,
+      filename: rom.filename,
+      metadata,
+      core,
+      loaderUrl: 'https://cdn.emulatorjs.org/stable/data/loader.js',
+      dataPath: 'https://cdn.emulatorjs.org/stable/data/',
+      startOnLoaded: true,
+      disableDatabases: true,
+      threads: false,
+    });
 
   } catch (error) {
     console.error('Error playing ROM:', error);
@@ -336,65 +288,14 @@ function closeEmulator() {
   const overlay = document.getElementById('emulator-overlay');
   const emulatorDiv = document.getElementById('emulator-div');
 
-  // Politely ask EmulatorJS to stop the running core before tearing down the DOM
-  try {
-    if (window.EJS_emulator && typeof window.EJS_emulator.callEvent === 'function') {
-      window.EJS_emulator.callEvent('exit');
-    }
-  } catch (error) {
-    console.warn('Failed to signal EmulatorJS to exit cleanly:', error);
+  if (activePlayerInstance) {
+    activePlayerInstance.destroy();
+    activePlayerInstance = null;
+  } else {
+    emulatorDiv.innerHTML = '';
   }
 
-  // Stop any audio/video elements
-  const iframes = emulatorDiv.querySelectorAll('iframe');
-  iframes.forEach(iframe => {
-    // Try to stop any content in the iframe
-    try {
-      if (iframe.contentWindow) {
-        iframe.contentWindow.location = 'about:blank';
-      }
-    } catch (e) {
-      // Ignore cross-origin errors
-    }
-  });
-
-  // Stop any audio/video elements
-  const mediaElements = emulatorDiv.querySelectorAll('audio, video');
-  mediaElements.forEach(media => {
-    media.pause();
-    media.src = '';
-    media.load();
-  });
-
-  // Clear the emulator div completely
-  emulatorDiv.innerHTML = '';
-
-  // Clear reference to the EmulatorJS instance so a fresh one is created next time
-  if (window.EJS_emulator) {
-    try {
-      if (typeof window.EJS_emulator.destroy === 'function') {
-        window.EJS_emulator.destroy();
-      }
-    } catch (error) {
-      console.warn('Failed to destroy EmulatorJS instance:', error);
-    }
-    window.EJS_emulator = null;
-  }
-
-  // Remove the active class to hide the overlay
   overlay.classList.remove('active');
-
-  // Clean up the game URL
-  if (currentGameUrl) {
-    URL.revokeObjectURL(currentGameUrl);
-    currentGameUrl = null;
-  }
-
-  // Clear EmulatorJS config to prevent reuse
-  window.EJS_player = null;
-  window.EJS_gameUrl = null;
-  window.EJS_core = null;
-  window.EJS_gameName = null;
 }
 
 /**
