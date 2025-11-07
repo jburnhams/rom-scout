@@ -188,12 +188,16 @@ async function readPersistedSave(romId: string): Promise<Uint8Array | null> {
   });
 }
 
+function toUint8Array(data: Uint8Array | ArrayBuffer): Uint8Array {
+  return data instanceof Uint8Array ? new Uint8Array(data) : new Uint8Array(data);
+}
+
 function extractSavePayload(payload: unknown): Uint8Array | null {
   if (!payload) {
     return null;
   }
   if (payload instanceof Uint8Array) {
-    return payload;
+    return new Uint8Array(payload);
   }
   if (payload instanceof ArrayBuffer) {
     return new Uint8Array(payload);
@@ -206,8 +210,14 @@ function extractSavePayload(payload: unknown): Uint8Array | null {
     const source = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
     return new Uint8Array(source);
   }
-  if (typeof payload === 'object' && 'save' in (payload as Record<string, unknown>)) {
-    return extractSavePayload((payload as Record<string, unknown>).save);
+  if (typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    if ('state' in record) {
+      return extractSavePayload(record.state);
+    }
+    if ('save' in record) {
+      return extractSavePayload(record.save);
+    }
   }
   return null;
 }
@@ -511,7 +521,8 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
 
     if (typeof manager.loadState === 'function') {
       try {
-        manager.loadState(pendingState);
+        const stateCopy = toUint8Array(pendingState);
+        manager.loadState(stateCopy);
         restored = true;
         console.log('[ROM Scout] Restored save using gameManager.loadState for ROM:', romId, 'reason:', reason);
       } catch (error) {
@@ -530,7 +541,8 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
     }
 
     if (!restored) {
-      restored = writeSaveToFilesystem(emulator, pendingState);
+      const filesystemState = toUint8Array(pendingState);
+      restored = writeSaveToFilesystem(emulator, filesystemState);
       if (restored) {
         if (typeof manager.loadSaveFiles === 'function') {
           try {
@@ -569,7 +581,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
         return false;
       }
 
-      pendingState = existing;
+      pendingState = new Uint8Array(existing);
       const restored = applyPendingState(reason);
       if (restored) {
         console.log('[ROM Scout] Persisted save applied for ROM:', romId, 'reason:', reason);

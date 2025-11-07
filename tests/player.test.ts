@@ -214,7 +214,8 @@ describe('startRomPlayer', () => {
     let getStateCalls = 0;
     const callEventHistory: string[] = [];
 
-    let stateToReturn = new Uint8Array([9, 8, 7]);
+    let stateBytes = new Uint8Array([9, 8, 7]);
+    let stateToReturn: Uint8Array | { state: Uint8Array } = { state: stateBytes };
 
     const emulator = {
       callEvent(event: string) {
@@ -262,7 +263,8 @@ describe('startRomPlayer', () => {
       assert.strictEqual(loadStateCalls.length, 1, 'startup should restore persisted save');
       assert.deepStrictEqual(Array.from(loadStateCalls[0]), Array.from(existingSave));
 
-      stateToReturn = new Uint8Array([4, 5, 6, 7]);
+      stateBytes = new Uint8Array([4, 5, 6, 7]);
+      stateToReturn = { state: stateBytes };
       const manualSaveResult = await instance.persistSave();
       await flushMicrotasks();
 
@@ -270,7 +272,7 @@ describe('startRomPlayer', () => {
       assert.strictEqual(getStateCalls, 1, 'manual save should call gameManager.getState exactly once');
       const postManualRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
       assert.ok(postManualRecord, 'Manual save should write to IndexedDB');
-      assert.deepStrictEqual(Array.from(new Uint8Array(postManualRecord.data)), Array.from(stateToReturn));
+      assert.deepStrictEqual(Array.from(new Uint8Array(postManualRecord.data)), Array.from(stateBytes));
 
       const manualLoadData = new Uint8Array([11, 12, 13, 14]);
       savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
@@ -281,14 +283,15 @@ describe('startRomPlayer', () => {
       assert.strictEqual(loadStateCalls.length, 2, 'manual load should call gameManager.loadState');
       assert.deepStrictEqual(Array.from(loadStateCalls[1]), Array.from(manualLoadData));
 
-      stateToReturn = new Uint8Array([21, 22, 23]);
+      stateBytes = new Uint8Array([21, 22, 23]);
+      stateToReturn = { state: stateBytes };
       await instance.destroy();
       await flushMicrotasks();
 
       assert.strictEqual(getStateCalls, 2, 'destroy should persist the latest state');
       const finalRecord = savesStore.get(romId) as FakeSaveRecord | undefined;
       assert.ok(finalRecord, 'Destroy should update the persisted save');
-      assert.deepStrictEqual(Array.from(new Uint8Array(finalRecord.data)), Array.from(stateToReturn));
+      assert.deepStrictEqual(Array.from(new Uint8Array(finalRecord.data)), Array.from(stateBytes));
       assert.ok(!callEventHistory.includes('load'), 'load events should not be triggered when loadState succeeds');
 
       const readyAfterDestroy = globalAny.EJS_ready;
