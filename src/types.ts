@@ -58,6 +58,12 @@ export interface RomMetadata {
   /** Unique identifier composed of provider name and source-specific ID */
   id: string;
 
+  /** Identifier used for local persistence (typically a ROM hash) */
+  persistId?: string;
+
+  /** Additional identifiers that may reference the same ROM */
+  alternateIds?: string[];
+
   /** Game title */
   title: string;
 

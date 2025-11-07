@@ -12,6 +12,7 @@ import type {
   RomMetadata,
   HashLookupRequest,
 } from './types.js';
+import type { HashResult } from './hash.js';
 
 /**
  * RomScout - Identify ROM files and fetch metadata
@@ -128,6 +129,9 @@ export class RomScout {
     // Check if this is an archive file
     const isArchive = isArchiveFilename(filename) || isZipArchive(uint8Data);
 
+    // Pre-compute hashes so we always have a fallback identifier available
+    const fileHashes = await calculateHash(buffer);
+
     if (isArchive && isZipArchive(uint8Data)) {
       // Extract files from the archive
       const extractedFiles = extractZipFiles(uint8Data);
@@ -147,9 +151,15 @@ export class RomScout {
           filename: file.name,
         };
 
-        const metadata = await this.lookup(request);
+        let metadata: RomMetadata | null = null;
+        try {
+          metadata = await this.lookup(request);
+        } catch (error) {
+          console.warn('Failed to lookup metadata for archive entry, skipping:', error);
+        }
 
         if (metadata) {
+          metadata = this.attachPersistenceIds(metadata, hashes);
           // Create a unique key for this ROM (use title + platform + publisher)
           const romKey = `${metadata.title}|${metadata.platform || ''}|${metadata.publisher || ''}`;
 
@@ -177,23 +187,77 @@ export class RomScout {
       }
 
       // No matches found in archive files
-      return null;
+      return this.createFallbackMetadata(fileHashes, filename);
     }
-
-    // Not an archive, or couldn't extract - hash the whole file
-    const hashes = await calculateHash(buffer);
 
     // Create lookup request
     const request: HashLookupRequest = {
-      md5: hashes.md5,
-      sha1: hashes.sha1,
-      crc32: hashes.crc32,
+      md5: fileHashes.md5,
+      sha1: fileHashes.sha1,
+      crc32: fileHashes.crc32,
       size: buffer.byteLength,
       filename,
     };
 
     // Try to fetch metadata from the configured provider
-    return this.lookup(request);
+    try {
+      const metadata = await this.lookup(request);
+      if (metadata) {
+        return this.attachPersistenceIds(metadata, fileHashes);
+      }
+    } catch (error) {
+      console.warn('Failed to lookup metadata from provider, using fallback hash metadata:', error);
+    }
+
+    return this.createFallbackMetadata(fileHashes, filename);
+  }
+
+  private attachPersistenceIds(metadata: RomMetadata, hashes: HashResult): RomMetadata {
+    const persistId = hashes.sha1 ?? hashes.md5 ?? hashes.crc32;
+    if (!persistId) {
+      return metadata;
+    }
+
+    const alternateIds = new Set<string>();
+    if (Array.isArray(metadata.alternateIds)) {
+      for (const id of metadata.alternateIds) {
+        if (typeof id === 'string' && id.trim()) {
+          alternateIds.add(id);
+        }
+      }
+    }
+    if (metadata.id) {
+      alternateIds.add(metadata.id);
+    }
+    alternateIds.add(persistId);
+
+    return {
+      ...metadata,
+      persistId,
+      alternateIds: Array.from(alternateIds),
+    };
+  }
+
+  private createFallbackMetadata(hashes: HashResult, filename?: string): RomMetadata | null {
+    const fallbackId = hashes.sha1 ?? hashes.md5 ?? hashes.crc32;
+    if (!fallbackId) {
+      return null;
+    }
+
+    const title = filename && filename.trim().length > 0 ? filename : fallbackId;
+
+    return {
+      id: fallbackId,
+      persistId: fallbackId,
+      alternateIds: [fallbackId],
+      title,
+      source: 'local-hash',
+      raw: {
+        fallback: true,
+        hashes,
+        filename,
+      },
+    };
   }
 
   /**

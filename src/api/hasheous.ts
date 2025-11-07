@@ -45,34 +45,20 @@ export class HasheousClient {
         url = `${this.corsProxy}${url}`;
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      const response = await this.performLookupRequest(url, JSON.stringify(requestBody));
 
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
+      const text = await response.text();
+      const data = this.parseJsonSafely(text);
 
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            return null; // ROM not found
-          }
-          throw new Error(`Hasheous API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        return this.transformResponse(data);
-      } finally {
-        clearTimeout(timeoutId);
+      if (response.status === 404) {
+        return null;
       }
+
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Hasheous API error: ${response.status}`);
+      }
+
+      return this.transformResponse(data);
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
@@ -81,6 +67,43 @@ export class HasheousClient {
         throw error;
       }
       throw new Error('Unknown error occurred during Hasheous API request');
+    }
+  }
+
+  private async performLookupRequest(url: string, body: string): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      await ensureProxyConfigured();
+
+      const options: RequestInit = {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body,
+        signal: controller.signal,
+      };
+      return await fetch(url, options);
+    } catch (error) {
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private parseJsonSafely(text: string): any {
+    if (!text) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      console.warn('Failed to parse Hasheous JSON response:', error);
+      throw error;
     }
   }
 
@@ -157,4 +180,45 @@ export class HasheousClient {
 
     return `HASHEOUS${String(providerId)}`;
   }
+}
+
+let proxySetupPromise: Promise<void> | null = null;
+
+async function ensureProxyConfigured(): Promise<void> {
+  if (proxySetupPromise) {
+    return proxySetupPromise;
+  }
+
+  if (typeof process === 'undefined' || !process.versions?.node) {
+    proxySetupPromise = Promise.resolve();
+    return proxySetupPromise;
+  }
+
+  const proxyUrl =
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    process.env.npm_config_https_proxy ||
+    process.env.npm_config_http_proxy ||
+    null;
+
+  if (!proxyUrl) {
+    proxySetupPromise = Promise.resolve();
+    return proxySetupPromise;
+  }
+
+  proxySetupPromise = (async () => {
+    try {
+      const { ProxyAgent, setGlobalDispatcher } = await import('undici');
+      if (typeof ProxyAgent === 'function' && typeof setGlobalDispatcher === 'function') {
+        const agent = new ProxyAgent(proxyUrl);
+        setGlobalDispatcher(agent);
+      }
+    } catch (error) {
+      console.warn('Failed to configure proxy for Hasheous lookup:', error);
+    }
+  })();
+
+  return proxySetupPromise;
 }
