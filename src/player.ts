@@ -683,7 +683,8 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
 
       if (typeof emulator.callEvent === 'function') {
         console.log(`[ROM Scout] Triggering emulator save events for ROM: ${romId} reason: ${reason}`);
-        callEvent = emulator.callEvent as (eventName: string) => unknown;
+        const boundCallEvent = emulator.callEvent.bind(emulator) as (eventName: string) => unknown;
+        callEvent = boundCallEvent;
         try {
           callEvent('saveState');
           saveStateTriggered = true;
