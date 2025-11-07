@@ -275,6 +275,7 @@ interface EmulatorGameManager {
   FS?: EmulatorFilesystem;
   getSaveFilePath?: () => string;
   loadSaveFiles?: () => void;
+  saveState?: () => void;
 }
 
 interface EmulatorInstance {
@@ -282,6 +283,7 @@ interface EmulatorInstance {
   callEvent?: (eventName: string) => void;
   destroy?: () => void;
   gameManager?: EmulatorGameManager;
+  events?: Record<string, { functions?: unknown[] }>;
 }
 
 type EmulatorGlobal = typeof globalThis & {
@@ -661,6 +663,8 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
   };
 
   const captureAndPersistSave = async (reason: string): Promise<boolean> => {
+    attachHandlers();
+
     const emulator = globalScope.EJS_emulator;
     if (!emulator || !emulator.gameManager) {
       console.log('[ROM Scout] No emulator instance available to save for ROM:', romId, 'reason:', reason);
@@ -707,6 +711,18 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
         resolvePendingSavePromise();
       }
 
+      const manager = emulator.gameManager;
+
+      if (!saveStateTriggered && typeof manager.saveState === 'function') {
+        try {
+          manager.saveState();
+          saveStateTriggered = true;
+          console.log(`[ROM Scout] Invoked game manager "saveState" directly for ROM: ${romId} reason: ${reason}`);
+        } catch (error) {
+          console.warn(`[ROM Scout] Failed to invoke game manager "saveState" for ROM: ${romId} reason: ${reason}`, error);
+        }
+      }
+
       await waitForSave;
 
       if (lastPersistedBytes === 0 && saveStateTriggered && callEvent) {
@@ -723,7 +739,6 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
         await fallbackWait;
       }
 
-      const manager = emulator.gameManager;
       if (lastPersistedBytes === 0) {
         if (
           manager.FS &&
