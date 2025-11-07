@@ -285,13 +285,19 @@ describe('startRomPlayer', () => {
     databaseHandlers[0]();
     await flushMicrotasks();
 
-    const savedBuffer = files.get('/saves/test.sav');
-    assert.ok(savedBuffer, 'persisted save data should be written to the filesystem');
-    assert.deepStrictEqual(Array.from(savedBuffer!), Array.from(existingSave));
+    // After saveDatabaseLoaded, save should be read but not yet written to filesystem
+    let savedBuffer = files.get('/saves/test.sav');
+    assert.ok(!savedBuffer, 'save should not be written to filesystem yet (before start event)');
 
     const startHandlers = eventHandlers.get('start');
     assert.ok(startHandlers && startHandlers.length > 0, 'start handler should be registered');
     startHandlers[0]();
+    await flushMicrotasks();
+
+    // After start event, save should be written to filesystem and loaded into game
+    savedBuffer = files.get('/saves/test.sav');
+    assert.ok(savedBuffer, 'persisted save data should be written to the filesystem after start event');
+    assert.deepStrictEqual(Array.from(savedBuffer!), Array.from(existingSave));
     assert.strictEqual(loadSaveFilesCount, 1, 'loadSaveFiles should be invoked after startup');
 
     const saveHandlers = eventHandlers.get('saveSave');

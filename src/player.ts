@@ -448,7 +448,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
   const previousSaveUpdate = typeof globalScope.EJS_onSaveUpdate === 'function' ? globalScope.EJS_onSaveUpdate : null;
 
   let handlersAttached = false;
-  let hasPendingLoad = false;
+  let pendingSaveData: Uint8Array | null = null;
 
   const handleSavePayload = (payload: unknown) => {
     console.log('[ROM Scout] Save event triggered for ROM:', romId);
@@ -485,27 +485,33 @@ function setupPersistentSave(instance: InternalPlayerInstance, romId?: string): 
       console.log('[ROM Scout] EmulatorJS "saveDatabaseLoaded" event fired');
       try {
         const existing = await readPersistedSave(romId);
-        if (existing && writeSaveToFilesystem(emulator, existing)) {
-          hasPendingLoad = true;
-          console.log('[ROM Scout] Save data restored to filesystem, will load on start');
+        if (existing) {
+          pendingSaveData = existing;
+          console.log('[ROM Scout] Successfully read save from IndexedDB for ROM:', romId, 'size:', existing.length, 'bytes - will restore on start');
         }
       } catch (error) {
-        console.warn('Failed to restore persisted EmulatorJS save data:', error);
+        console.warn('Failed to read persisted EmulatorJS save data:', error);
       }
     });
 
     emulator.on('start', () => {
       console.log('[ROM Scout] EmulatorJS "start" event fired');
-      if (hasPendingLoad && emulator.gameManager && typeof emulator.gameManager.loadSaveFiles === 'function') {
-        console.log('[ROM Scout] Loading save files into game');
-        try {
-          emulator.gameManager.loadSaveFiles();
-          console.log('[ROM Scout] Successfully loaded save files into game');
-        } catch (error) {
-          console.warn('Failed to hydrate EmulatorJS save files:', error);
+      if (pendingSaveData) {
+        console.log('[ROM Scout] Attempting to restore save data to emulator filesystem');
+        if (writeSaveToFilesystem(emulator, pendingSaveData)) {
+          console.log('[ROM Scout] Save data successfully written to filesystem');
+          if (emulator.gameManager && typeof emulator.gameManager.loadSaveFiles === 'function') {
+            console.log('[ROM Scout] Loading save files into game');
+            try {
+              emulator.gameManager.loadSaveFiles();
+              console.log('[ROM Scout] Successfully loaded save files into game');
+            } catch (error) {
+              console.warn('Failed to load EmulatorJS save files:', error);
+            }
+          }
         }
+        pendingSaveData = null;
       }
-      hasPendingLoad = false;
     });
   };
 
