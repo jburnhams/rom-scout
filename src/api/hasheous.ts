@@ -5,11 +5,6 @@
 
 import type { HashLookupRequest, RomMetadata, ImageMetadata } from '../types.js';
 
-interface LookupResponse {
-  status: number;
-  data: any;
-}
-
 export interface HasheousConfig {
   baseUrl: string;
   timeout?: number;
@@ -50,14 +45,17 @@ export class HasheousClient {
         url = `${this.corsProxy}${url}`;
       }
 
-      const { status, data } = await this.performLookupRequest(url, JSON.stringify(requestBody));
+      const response = await this.performLookupRequest(url, JSON.stringify(requestBody));
 
-      if (status === 404) {
+      const text = await response.text();
+      const data = this.parseJsonSafely(text);
+
+      if (response.status === 404) {
         return null;
       }
 
-      if (status < 200 || status >= 300) {
-        throw new Error(`Hasheous API error: ${status}`);
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Hasheous API error: ${response.status}`);
       }
 
       return this.transformResponse(data);
@@ -72,26 +70,14 @@ export class HasheousClient {
     }
   }
 
-  private async performLookupRequest(url: string, body: string): Promise<LookupResponse> {
-    const fetchResult = await this.tryFetch(url, body);
-    if (fetchResult) {
-      return fetchResult;
-    }
-
-    const fallbackResult = await this.tryCurlFallback(url, body);
-    if (fallbackResult) {
-      return fallbackResult;
-    }
-
-    throw new Error('Failed to reach Hasheous API');
-  }
-
-  private async tryFetch(url: string, body: string): Promise<LookupResponse | null> {
+  private async performLookupRequest(url: string, body: string): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const response = await fetch(url, {
+      await ensureProxyConfigured();
+
+      const options: RequestInit = {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -99,108 +85,13 @@ export class HasheousClient {
         },
         body,
         signal: controller.signal,
-      });
-
-      const text = await response.text();
-      const data = this.parseJsonSafely(text);
-      return { status: response.status, data };
+      };
+      return await fetch(url, options);
     } catch (error) {
-      if (this.isNetworkUnreachable(error)) {
-        return null;
-      }
       throw error;
     } finally {
       clearTimeout(timeoutId);
     }
-  }
-
-  private async tryCurlFallback(url: string, body: string): Promise<LookupResponse | null> {
-    if (!this.isNodeEnvironment()) {
-      return null;
-    }
-
-    try {
-      const [{ execFile }] = await Promise.all([import('node:child_process')]);
-
-      const timeoutSeconds = Math.max(1, Math.ceil(this.timeout / 1000));
-      const args = [
-        '-sS',
-        '-X',
-        'POST',
-        '-H',
-        'Accept: application/json',
-        '-H',
-        'Content-Type: application/json',
-        '--data',
-        body,
-        '--max-time',
-        String(timeoutSeconds),
-        '-o',
-        '-',
-        '-w',
-        '\n%{http_code}\n',
-        url,
-      ];
-
-      const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-        execFile('curl', args, { env: process.env }, (error, stdout, stderr) => {
-          if (error) {
-            const err = error instanceof Error ? error : new Error(String(error));
-            err.message = `${err.message}${stderr ? `: ${stderr}` : ''}`;
-            reject(err);
-            return;
-          }
-          resolve({ stdout: String(stdout) });
-        });
-      });
-
-      const trimmed = stdout.trimEnd();
-      const lastNewline = trimmed.lastIndexOf('\n');
-      if (lastNewline === -1) {
-        throw new Error('Unexpected curl output');
-      }
-
-      const bodyText = trimmed.slice(0, lastNewline);
-      const statusText = trimmed.slice(lastNewline + 1).trim();
-      const status = Number.parseInt(statusText, 10);
-
-      if (Number.isNaN(status)) {
-        throw new Error(`Invalid HTTP status from curl: ${statusText}`);
-      }
-
-      const data = this.parseJsonSafely(bodyText);
-      return { status, data };
-    } catch (error) {
-      console.warn('Failed to retry Hasheous lookup via curl:', error);
-      return null;
-    }
-  }
-
-  private isNetworkUnreachable(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-
-    const cause = (error as { cause?: unknown }).cause;
-    if (cause && this.isNetworkUnreachable(cause)) {
-      return true;
-    }
-
-    const code = (error as { code?: unknown }).code;
-    if (code === 'ENETUNREACH') {
-      return true;
-    }
-
-    const nestedErrors = (error as { errors?: unknown }).errors;
-    if (Array.isArray(nestedErrors)) {
-      return nestedErrors.some((nested) => this.isNetworkUnreachable(nested));
-    }
-
-    return false;
-  }
-
-  private isNodeEnvironment(): boolean {
-    return typeof process !== 'undefined' && !!process.versions?.node;
   }
 
   private parseJsonSafely(text: string): any {
@@ -289,4 +180,45 @@ export class HasheousClient {
 
     return `HASHEOUS${String(providerId)}`;
   }
+}
+
+let proxySetupPromise: Promise<void> | null = null;
+
+async function ensureProxyConfigured(): Promise<void> {
+  if (proxySetupPromise) {
+    return proxySetupPromise;
+  }
+
+  if (typeof process === 'undefined' || !process.versions?.node) {
+    proxySetupPromise = Promise.resolve();
+    return proxySetupPromise;
+  }
+
+  const proxyUrl =
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    process.env.npm_config_https_proxy ||
+    process.env.npm_config_http_proxy ||
+    null;
+
+  if (!proxyUrl) {
+    proxySetupPromise = Promise.resolve();
+    return proxySetupPromise;
+  }
+
+  proxySetupPromise = (async () => {
+    try {
+      const { ProxyAgent, setGlobalDispatcher } = await import('undici');
+      if (typeof ProxyAgent === 'function' && typeof setGlobalDispatcher === 'function') {
+        const agent = new ProxyAgent(proxyUrl);
+        setGlobalDispatcher(agent);
+      }
+    } catch (error) {
+      console.warn('Failed to configure proxy for Hasheous lookup:', error);
+    }
+  })();
+
+  return proxySetupPromise;
 }
