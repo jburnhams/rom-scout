@@ -285,7 +285,7 @@ async function playRom(rom) {
     }
 
     // Create object URL for the game
-    const gameUrl = URL.createObjectURL(gameData);
+    const gameUrl = gameData;
     currentGameUrl = gameUrl;
 
     // Show emulator overlay
