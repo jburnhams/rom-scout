@@ -142,12 +142,18 @@
       background: white;
       color: var(--text-color);
       border: none;
-      padding: 0.5rem 1rem;
+      padding: 0.5rem;
       border-radius: 4px;
       cursor: pointer;
       font-weight: 600;
+      font-size: 1.25rem;
       box-shadow: var(--shadow);
       transition: background 0.2s;
+      min-width: 2.5rem;
+      height: 2.5rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .emulator-control-btn:hover {
@@ -240,13 +246,13 @@
   <div class="emulator-overlay" id="emulator-overlay">
     <div class="emulator-container">
       <div class="emulator-controls">
-        <button class="emulator-control-btn" id="close-emulator">Close Emulator</button>
-        <button class="emulator-control-btn" id="restart-emulator">Restart ROM</button>
+        <button class="emulator-control-btn" id="close-emulator" title="Close Emulator">✕</button>
+        <button class="emulator-control-btn" id="restart-emulator" title="Restart ROM">↻</button>
         <select class="save-state-selector" id="save-state-selector" disabled>
           <option value="">No saves available</option>
         </select>
-        <button class="emulator-control-btn" id="load-emulator-save">Load Save</button>
-        <button class="emulator-control-btn" id="save-emulator-save">Save Now</button>
+        <button class="emulator-control-btn" id="load-emulator-save" title="Load Save">↓</button>
+        <button class="emulator-control-btn" id="save-emulator-save" title="Save Now">↑</button>
       </div>
       <div id="emulator-div"></div>
     </div>
