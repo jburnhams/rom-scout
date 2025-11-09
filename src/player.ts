@@ -921,7 +921,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
     const destroyPromise = (async () => {
       try {
-        await persistState('destroy');
+        await persistState('destroy', true);
 
         if (globalScope.EJS_ready === readyWrapper) {
           if (previousReady) {
