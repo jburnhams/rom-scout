@@ -25,7 +25,7 @@ const roms = [];
 const scout = new RomScout({
   provider: 'hasheous',
   hasheousUrl: 'https://hasheous.org',
-  corsProxy: window.location.hostname.endsWith('.github.io') ? 'https://proxy.corsfix.com/?' : undefined
+  corsProxy: window.location.hostname ? 'https://proxy.jonathanburnhams.com/proxy/' : undefined
 });
 
 /**
