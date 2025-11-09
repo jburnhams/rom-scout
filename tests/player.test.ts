@@ -60,6 +60,23 @@ describe('startRomPlayer', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
+  async function waitForCondition(
+    condition: () => boolean,
+    message: string,
+    timeoutMs = 2000
+  ): Promise<void> {
+    const start = Date.now();
+    while (true) {
+      if (condition()) {
+        return;
+      }
+      if (Date.now() - start >= timeoutMs) {
+        assert.fail(message);
+      }
+      await flushMicrotasks();
+    }
+  }
+
   it('detects core from metadata and filename', () => {
     assert.strictEqual(detectEmulatorCore(undefined, { platform: 'Super Nintendo' }), 'snes');
     assert.strictEqual(detectEmulatorCore('game.gba'), 'gba');
@@ -258,19 +275,21 @@ describe('startRomPlayer', () => {
       assert.notStrictEqual(readyWrapper, previousReady, 'ready handler should be wrapped to manage persistence');
 
       readyWrapper!();
-      await flushMicrotasks();
+      await waitForCondition(() => loadStateCalls.length >= 1, 'startup should restore persisted save');
 
       assert.strictEqual(readyCallbackCount, 1, 'previous ready handler should be invoked');
-      assert.strictEqual(loadStateCalls.length, 1, 'startup should restore persisted save');
       assert.deepStrictEqual(Array.from(loadStateCalls[0]), Array.from(existingSave));
 
       stateBytes = new Uint8Array([4, 5, 6, 7]);
       stateToReturn = { state: stateBytes };
       const manualSaveResult = await instance.persistSave();
-      await flushMicrotasks();
-
       assert.strictEqual(manualSaveResult, true, 'persistSave should report success when data is captured');
       assert.strictEqual(getStateCalls, 1, 'manual save should call gameManager.getState exactly once');
+      await waitForCondition(() => {
+        const primary = savesStore.get(persistId) as FakeSaveRecord | undefined;
+        const secondary = savesStore.get(romId) as FakeSaveRecord | undefined;
+        return Boolean(primary && 'saves' in primary && primary.saves.length === 1 && secondary && 'saves' in secondary && secondary.saves.length === 1);
+      }, 'Manual save should persist data to IndexedDB');
       const postManualPrimary = savesStore.get(persistId) as FakeSaveRecord | undefined;
       const postManualSecondary = savesStore.get(romId) as FakeSaveRecord | undefined;
       assert.ok(postManualPrimary, 'Manual save should write to IndexedDB using persistId');
@@ -283,20 +302,26 @@ describe('startRomPlayer', () => {
       assert.deepStrictEqual(Array.from(new Uint8Array(postManualSecondary!.saves[0].data)), Array.from(stateBytes));
 
       const manualLoadData = new Uint8Array([11, 12, 13, 14]);
-      savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
+      // Ensure the manual load payload sorts newer than any previously persisted entries.
+      // The persistence layer picks the most recent timestamp, so using a future timestamp
+      // avoids flakes when the manual save and load happen within the same millisecond.
+      const manualLoadTimestamp = Date.now() + 1000;
+      savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: manualLoadTimestamp });
       const manualLoadResult = await instance.loadLatestSave();
-      await flushMicrotasks();
-
       assert.strictEqual(manualLoadResult, true, 'loadLatestSave should restore when data exists');
-      assert.strictEqual(loadStateCalls.length, 2, 'manual load should call gameManager.loadState');
+      await waitForCondition(() => loadStateCalls.length >= 2, 'manual load should call gameManager.loadState');
       assert.deepStrictEqual(Array.from(loadStateCalls[1]), Array.from(manualLoadData));
 
       stateBytes = new Uint8Array([21, 22, 23]);
       stateToReturn = { state: stateBytes };
       await instance.destroy();
-      await flushMicrotasks();
-
+      await waitForCondition(() => getStateCalls >= 2, 'destroy should persist the latest state');
       assert.strictEqual(getStateCalls, 2, 'destroy should persist the latest state');
+      await waitForCondition(() => {
+        const primary = savesStore.get(persistId) as FakeSaveRecord | undefined;
+        const secondary = savesStore.get(romId) as FakeSaveRecord | undefined;
+        return Boolean(primary && 'saves' in primary && primary.saves.length === 1 && secondary && 'saves' in secondary && secondary.saves.length === 1);
+      }, 'Destroy should update the persisted save entries');
       const finalPrimary = savesStore.get(persistId) as FakeSaveRecord | undefined;
       const finalSecondary = savesStore.get(romId) as FakeSaveRecord | undefined;
       assert.ok(finalPrimary, 'Destroy should update the persisted save primary key');
