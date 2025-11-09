@@ -2,7 +2,7 @@
  * rom-scout - ROM identification and metadata fetching library
  *
  * A JavaScript library that identifies emulator ROM files by calculating hashes
- * and fetching metadata from various APIs including Hasheous, IGDB, and ScreenScraper.
+ * and fetching metadata from Hasheous.
  *
  * @example
  * ```typescript
@@ -41,8 +41,6 @@ export type { RomPlayerOptions, RomPlayerInstance } from './player.js';
 
 // API clients
 export { HasheousClient } from './api/hasheous.js';
-export { IGDBClient } from './api/igdb.js';
-export { ScreenScraperClient } from './api/screenscraper.js';
 
 // Types
 export type {

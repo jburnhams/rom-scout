@@ -8,7 +8,5 @@ const mod = require(cjsPath);
 assert.strictEqual(typeof mod.RomScout, 'function', 'CJS build should export RomScout');
 assert.strictEqual(typeof mod.calculateHash, 'function', 'CJS build should export calculateHash');
 assert.strictEqual(typeof mod.HasheousClient, 'function', 'CJS build should export HasheousClient');
-assert.strictEqual(typeof mod.IGDBClient, 'function', 'CJS build should export IGDBClient');
-assert.strictEqual(typeof mod.ScreenScraperClient, 'function', 'CJS build should export ScreenScraperClient');
 
 console.log('✓ CJS smoke test passed');
