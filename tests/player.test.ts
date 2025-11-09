@@ -306,7 +306,10 @@ describe('startRomPlayer', () => {
       // The persistence layer picks the most recent timestamp, so using a future timestamp
       // avoids flakes when the manual save and load happen within the same millisecond.
       const manualLoadTimestamp = Date.now() + 1000;
+      savesStore.set(persistId, { data: manualLoadData.buffer.slice(0), updatedAt: manualLoadTimestamp });
       savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: manualLoadTimestamp });
+      // Flush microtasks to ensure IndexedDB operations from manual save are fully settled
+      await flushMicrotasks();
       const manualLoadResult = await instance.loadLatestSave();
       assert.strictEqual(manualLoadResult, true, 'loadLatestSave should restore when data exists');
       await waitForCondition(() => loadStateCalls.length >= 2, 'manual load should call gameManager.loadState');
