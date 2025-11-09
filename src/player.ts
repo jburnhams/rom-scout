@@ -49,6 +49,39 @@ interface PersistedSaveRecord {
   updatedAt: number;
 }
 
+function formatTimestamp(timestamp: number | null): string {
+  if (timestamp === null || !Number.isFinite(timestamp)) {
+    return 'null';
+  }
+  return new Date(timestamp).toLocaleString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+function computeCrc32(data: Uint8Array): string {
+  const crcTable = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let crc = i;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 1) ? (0xEDB88320 ^ (crc >>> 1)) : (crc >>> 1);
+    }
+    crcTable[i] = crc;
+  }
+
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) {
+    crc = crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+  }
+  crc = (crc ^ 0xFFFFFFFF) >>> 0;
+  return crc.toString(16).padStart(8, '0').toUpperCase();
+}
+
 let saveDatabasePromise: Promise<IDBDatabase | null> | null = null;
 
 function isIndexedDbAvailable(): boolean {
@@ -104,7 +137,7 @@ async function writePersistedSave(romId: string, data: Uint8Array | null): Promi
     return;
   }
 
-  console.log('[ROM Scout] Writing save to IndexedDB for ROM:', romId, 'size:', data ? data.length : 0);
+  console.log('[ROM Scout] Writing save to IndexedDB for ROM:', romId, 'size:', data ? data.length : 0, 'crc32:', data ? computeCrc32(data) : 'null');
 
   await new Promise<void>((resolve) => {
     try {
@@ -122,7 +155,7 @@ async function writePersistedSave(romId: string, data: Uint8Array | null): Promi
       }
 
       request.onsuccess = () => {
-        console.log('[ROM Scout] Successfully persisted save to IndexedDB for ROM:', romId);
+        console.log('[ROM Scout] Successfully persisted save to IndexedDB for ROM:', romId, 'crc32:', data ? computeCrc32(data) : 'null');
         resolve();
       };
       request.onerror = () => {
@@ -187,7 +220,9 @@ async function readPersistedSave(romId: string): Promise<StoredSaveData | null> 
             saveData.length,
             'bytes',
             'updatedAt:',
-            updatedAt
+            formatTimestamp(updatedAt),
+            'crc32:',
+            computeCrc32(saveData)
           );
           resolve({ data: saveData, updatedAt });
         } else {
@@ -253,7 +288,7 @@ function writeSaveToFilesystem(emulator: EmulatorInstance, data: Uint8Array): bo
     return false;
   }
 
-  console.log('[ROM Scout] Writing save to emulator filesystem:', path, 'size:', data.length, 'bytes');
+  console.log('[ROM Scout] Writing save to emulator filesystem:', path, 'size:', data.length, 'bytes', 'crc32:', computeCrc32(data));
 
   const fs = manager.FS;
   try {
@@ -634,16 +669,16 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
       pendingState = new Uint8Array(candidate.data);
       const outcome = applyPendingState(reason);
       if (outcome === 'restored') {
-        console.log('[ROM Scout] Persisted save applied for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', candidate.updatedAt);
+        console.log('[ROM Scout] Persisted save applied for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', formatTimestamp(candidate.updatedAt), 'crc32:', computeCrc32(candidate.data));
         return true;
       }
 
       if (outcome === 'queued') {
-        console.log('[ROM Scout] Persisted save queued until emulator ready for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', candidate.updatedAt);
+        console.log('[ROM Scout] Persisted save queued until emulator ready for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', formatTimestamp(candidate.updatedAt), 'crc32:', computeCrc32(candidate.data));
         return false;
       }
 
-      console.log('[ROM Scout] Persisted save failed for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', candidate.updatedAt, 'trying next most recent');
+      console.log('[ROM Scout] Persisted save failed for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', formatTimestamp(candidate.updatedAt), 'crc32:', computeCrc32(candidate.data), 'trying next most recent');
       pendingState = null;
     }
 
@@ -683,7 +718,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
       for (const key of persistenceKeys) {
         await writePersistedSave(key, stateData);
       }
-      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'keys:', persistenceKeys.join(', '));
+      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'keys:', persistenceKeys.join(', '), 'crc32:', computeCrc32(stateData));
       return true;
     } catch (error) {
       console.warn('Failed to persist EmulatorJS save data:', error);
