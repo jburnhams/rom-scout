@@ -302,7 +302,11 @@ describe('startRomPlayer', () => {
       assert.deepStrictEqual(Array.from(new Uint8Array(postManualSecondary!.saves[0].data)), Array.from(stateBytes));
 
       const manualLoadData = new Uint8Array([11, 12, 13, 14]);
-      savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
+      // Ensure the manual load payload sorts newer than any previously persisted entries.
+      // The persistence layer picks the most recent timestamp, so using a future timestamp
+      // avoids flakes when the manual save and load happen within the same millisecond.
+      const manualLoadTimestamp = Date.now() + 1000;
+      savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: manualLoadTimestamp });
       const manualLoadResult = await instance.loadLatestSave();
       assert.strictEqual(manualLoadResult, true, 'loadLatestSave should restore when data exists');
       await waitForCondition(() => loadStateCalls.length >= 2, 'manual load should call gameManager.loadState');
