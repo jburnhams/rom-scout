@@ -867,6 +867,46 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     void loadPersistedState(reason);
   };
 
+  // Set up event listener for when the game actually starts
+  const setupGameStartListener = () => {
+    const emulator = globalScope.EJS_emulator;
+    if (!emulator || !emulator.events) {
+      console.log('[ROM Scout] Emulator not ready for event listener setup for ROM:', romLabel);
+      return false;
+    }
+
+    // Hook into EmulatorJS event system to listen for game-start
+    const originalEvents = emulator.events;
+    const gameStartEventKey = 'game-start';
+
+    if (!originalEvents[gameStartEventKey]) {
+      originalEvents[gameStartEventKey] = { functions: [] };
+    }
+
+    const gameStartHandler = () => {
+      console.log('[ROM Scout] Game start event detected for ROM:', romLabel);
+
+      // Small delay to ensure the game is fully initialized
+      setTimeout(() => {
+        if (pendingState) {
+          const outcome = applyPendingState('game-start');
+          if (outcome !== 'restored') {
+            console.log('[ROM Scout] Save data still pending after game-start event for ROM:', romLabel, 'status:', outcome);
+          }
+        } else if (!startupLoadAttempted) {
+          triggerStartupLoad('game-start');
+        }
+      }, 100);
+    };
+
+    if (originalEvents[gameStartEventKey].functions) {
+      originalEvents[gameStartEventKey].functions.push(gameStartHandler);
+    }
+
+    console.log('[ROM Scout] Registered game-start event listener for ROM:', romLabel);
+    return true;
+  };
+
   const readyWrapper = () => {
     if (previousReady) {
       try {
@@ -876,54 +916,40 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
       }
     }
 
-    // Set up event listener for when the game actually starts
-    const setupGameStartListener = () => {
-      const emulator = globalScope.EJS_emulator;
-      if (!emulator || !emulator.events) {
-        console.log('[ROM Scout] Emulator not ready for event listener setup for ROM:', romLabel);
-        return;
-      }
-
-      // Hook into EmulatorJS event system to listen for game-start
-      const originalEvents = emulator.events;
-      const gameStartEventKey = 'game-start';
-
-      if (!originalEvents[gameStartEventKey]) {
-        originalEvents[gameStartEventKey] = { functions: [] };
-      }
-
-      const gameStartHandler = () => {
-        console.log('[ROM Scout] Game start event detected for ROM:', romLabel);
-
-        // Small delay to ensure the game is fully initialized
-        setTimeout(() => {
-          if (pendingState) {
-            const outcome = applyPendingState('game-start');
-            if (outcome !== 'restored') {
-              console.log('[ROM Scout] Save data still pending after game-start event for ROM:', romLabel, 'status:', outcome);
-            }
-          } else if (!startupLoadAttempted) {
-            triggerStartupLoad('game-start');
-          }
-        }, 100);
-      };
-
-      if (originalEvents[gameStartEventKey].functions) {
-        originalEvents[gameStartEventKey].functions.push(gameStartHandler);
-      }
-
-      console.log('[ROM Scout] Registered game-start event listener for ROM:', romLabel);
-    };
-
     // Try to setup the event listener immediately
-    setupGameStartListener();
+    let eventListenerRegistered = setupGameStartListener();
+
+    // If event listener couldn't be registered and emulator exists, fall back to immediate load
+    if (!eventListenerRegistered && globalScope.EJS_emulator) {
+      console.log('[ROM Scout] Event listener not available, using fallback load for ROM:', romLabel);
+      // Use a small delay to allow emulator to initialize
+      setTimeout(() => {
+        if (pendingState) {
+          applyPendingState('ready-fallback');
+        } else {
+          triggerStartupLoad('ready-fallback');
+        }
+      }, 100);
+    }
 
     // Also poll for emulator availability if not ready yet
     if (!globalScope.EJS_emulator) {
       const pollInterval = setInterval(() => {
         if (globalScope.EJS_emulator) {
           clearInterval(pollInterval);
-          setupGameStartListener();
+          const registered = setupGameStartListener();
+
+          // If still can't register event listener, use fallback
+          if (!registered) {
+            console.log('[ROM Scout] Event listener not available after polling, using fallback load for ROM:', romLabel);
+            setTimeout(() => {
+              if (pendingState) {
+                applyPendingState('poll-fallback');
+              } else {
+                triggerStartupLoad('poll-fallback');
+              }
+            }, 100);
+          }
         }
       }, 100);
 
@@ -934,10 +960,23 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
   globalScope.EJS_ready = readyWrapper;
 
-  // If emulator already exists, call the ready wrapper to set up event listeners
+  // If emulator already exists, set up event listeners or fallback load without calling readyWrapper
+  // (readyWrapper will be called by EmulatorJS or the test)
   if (globalScope.EJS_emulator) {
     console.log('[ROM Scout] Emulator already exists, setting up event listeners for ROM:', romLabel);
-    readyWrapper();
+    const eventListenerRegistered = setupGameStartListener();
+
+    // If event listener couldn't be registered, schedule fallback load
+    if (!eventListenerRegistered) {
+      console.log('[ROM Scout] Event listener not available, scheduling fallback load for ROM:', romLabel);
+      setTimeout(() => {
+        if (pendingState) {
+          applyPendingState('existing-emulator-fallback');
+        } else {
+          triggerStartupLoad('existing-emulator-fallback');
+        }
+      }, 100);
+    }
   }
 
   instance.persistSave = async (createNew = false) => {
