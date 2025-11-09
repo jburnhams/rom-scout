@@ -5,6 +5,8 @@
 // Import the library from local build
 let RomScout, startRomPlayer;
 let activePlayerInstance = null;
+let currentSaveHandler = null;
+let currentLoadHandler = null;
 try {
   const module = await import('./rom-scout.esm.js');
   RomScout = module.RomScout;
@@ -233,6 +235,67 @@ function addRomFromFile(file) {
 }
 
 /**
+ * Bind save/load buttons to the current player instance
+ */
+function bindSaveLoadButtons(playerInstance) {
+  const saveButton = document.getElementById('save-emulator-save');
+  const loadButton = document.getElementById('load-emulator-save');
+
+  // Remove previous handlers if they exist
+  if (currentSaveHandler) {
+    saveButton.removeEventListener('click', currentSaveHandler);
+  }
+  if (currentLoadHandler) {
+    loadButton.removeEventListener('click', currentLoadHandler);
+  }
+
+  // Create new handlers bound to the current instance
+  currentSaveHandler = async () => {
+    if (!playerInstance) {
+      console.log('[ROM Scout Demo] No active player available for manual save');
+      return;
+    }
+
+    console.log('[ROM Scout Demo] Manual save requested');
+    try {
+      const saved = await playerInstance.persistSave();
+      if (saved) {
+        console.log('[ROM Scout Demo] Manual save completed successfully');
+      } else {
+        console.log('[ROM Scout Demo] Manual save finished without new data');
+      }
+    } catch (error) {
+      console.error('[ROM Scout Demo] Manual save failed:', error);
+    }
+  };
+
+  currentLoadHandler = async () => {
+    if (!playerInstance) {
+      console.log('[ROM Scout Demo] No active player available for manual load');
+      return;
+    }
+
+    console.log('[ROM Scout Demo] Manual load requested');
+    try {
+      const restored = await playerInstance.loadLatestSave();
+      if (restored) {
+        console.log('[ROM Scout Demo] Manual load restored save data');
+      } else {
+        console.log('[ROM Scout Demo] Manual load completed but no save data was restored');
+      }
+    } catch (error) {
+      console.error('[ROM Scout Demo] Manual load failed:', error);
+    }
+  };
+
+  // Attach new handlers
+  saveButton.addEventListener('click', currentSaveHandler);
+  loadButton.addEventListener('click', currentLoadHandler);
+
+  console.log('[ROM Scout Demo] Save/Load buttons bound to current player instance');
+}
+
+/**
  * Play a ROM
  */
 async function playRom(rom) {
@@ -275,6 +338,9 @@ async function playRom(rom) {
       threads: false,
     });
 
+    // Bind save/load buttons to this new instance
+    bindSaveLoadButtons(activePlayerInstance);
+
   } catch (error) {
     console.error('Error playing ROM:', error);
     alert(`Failed to play ROM: ${error.message}`);
@@ -296,44 +362,6 @@ async function closeEmulator() {
   }
 
   overlay.classList.remove('active');
-}
-
-async function saveActiveEmulator() {
-  if (!activePlayerInstance) {
-    console.log('[ROM Scout Demo] No active player available for manual save');
-    return;
-  }
-
-  console.log('[ROM Scout Demo] Manual save requested');
-  try {
-    const saved = await activePlayerInstance.persistSave();
-    if (saved) {
-      console.log('[ROM Scout Demo] Manual save completed successfully');
-    } else {
-      console.log('[ROM Scout Demo] Manual save finished without new data');
-    }
-  } catch (error) {
-    console.error('[ROM Scout Demo] Manual save failed:', error);
-  }
-}
-
-async function loadActiveEmulatorSave() {
-  if (!activePlayerInstance) {
-    console.log('[ROM Scout Demo] No active player available for manual load');
-    return;
-  }
-
-  console.log('[ROM Scout Demo] Manual load requested');
-  try {
-    const restored = await activePlayerInstance.loadLatestSave();
-    if (restored) {
-      console.log('[ROM Scout Demo] Manual load restored save data');
-    } else {
-      console.log('[ROM Scout Demo] Manual load completed but no save data was restored');
-    }
-  } catch (error) {
-    console.error('[ROM Scout Demo] Manual load failed:', error);
-  }
 }
 
 /**
@@ -405,13 +433,8 @@ async function init() {
     void closeEmulator();
   });
 
-  document.getElementById('save-emulator-save').addEventListener('click', () => {
-    void saveActiveEmulator();
-  });
-
-  document.getElementById('load-emulator-save').addEventListener('click', () => {
-    void loadActiveEmulatorSave();
-  });
+  // Note: Save/Load buttons are bound when a ROM is played to ensure
+  // they always reference the current emulator instance
 
   // Set up file input
   document.getElementById('file-input').addEventListener('change', (e) => {
