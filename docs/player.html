@@ -134,6 +134,7 @@
       right: 0;
       display: flex;
       gap: 0.5rem;
+      align-items: center;
       z-index: 1001;
     }
 
@@ -151,6 +152,24 @@
 
     .emulator-control-btn:hover {
       background: var(--border-color);
+    }
+
+    .save-state-selector {
+      background: white;
+      color: var(--text-color);
+      border: none;
+      padding: 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      box-shadow: var(--shadow);
+      min-width: 200px;
+      max-width: 300px;
+    }
+
+    .save-state-selector:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     #emulator-div {
@@ -222,6 +241,9 @@
     <div class="emulator-container">
       <div class="emulator-controls">
         <button class="emulator-control-btn" id="close-emulator">Close Emulator</button>
+        <select class="save-state-selector" id="save-state-selector" disabled>
+          <option value="">No saves available</option>
+        </select>
         <button class="emulator-control-btn" id="load-emulator-save">Load Save</button>
         <button class="emulator-control-btn" id="save-emulator-save">Save Now</button>
       </div>

@@ -44,9 +44,14 @@ const EXTENSION_CORE_MAP: Record<string, string> = {
 const SAVE_DATABASE_NAME = 'rom-scout-emulatorjs';
 const SAVE_STORE_NAME = 'saves';
 
-interface PersistedSaveRecord {
+interface PersistedSaveState {
   data: ArrayBuffer;
   updatedAt: number;
+  crc32: string;
+}
+
+interface PersistedSaveRecord {
+  saves: PersistedSaveState[];
 }
 
 function formatTimestamp(timestamp: number | null): string {
@@ -130,38 +135,82 @@ function toStoredBuffer(data: Uint8Array): ArrayBuffer {
   return data.slice().buffer;
 }
 
-async function writePersistedSave(romId: string, data: Uint8Array | null): Promise<void> {
+async function writePersistedSave(romId: string, data: Uint8Array | null, createNewState = false): Promise<void> {
   const db = await openSaveDatabase();
   if (!db) {
     console.log('[ROM Scout] IndexedDB not available, cannot persist save');
     return;
   }
 
-  console.log('[ROM Scout] Writing save to IndexedDB for ROM:', romId, 'size:', data ? data.length : 0, 'crc32:', data ? computeCrc32(data) : 'null');
+  const crc32 = data ? computeCrc32(data) : 'null';
+  console.log('[ROM Scout] Writing save to IndexedDB for ROM:', romId, 'size:', data ? data.length : 0, 'crc32:', crc32, 'createNew:', createNewState);
 
   await new Promise<void>((resolve) => {
     try {
       const transaction = db.transaction(SAVE_STORE_NAME, 'readwrite');
       const store = transaction.objectStore(SAVE_STORE_NAME);
-      let request: IDBRequest;
-      if (data) {
-        const record: PersistedSaveRecord = {
-          data: toStoredBuffer(data),
-          updatedAt: Date.now(),
+
+      if (!data) {
+        // Delete all saves for this ROM
+        const deleteRequest = store.delete(romId);
+        deleteRequest.onsuccess = () => {
+          console.log('[ROM Scout] Successfully deleted all saves from IndexedDB for ROM:', romId);
+          resolve();
         };
-        request = store.put(record, romId);
-      } else {
-        request = store.delete(romId);
+        deleteRequest.onerror = () => {
+          console.warn('Failed to delete EmulatorJS save data:', deleteRequest.error);
+          resolve();
+        };
+        return;
       }
 
-      request.onsuccess = () => {
-        console.log('[ROM Scout] Successfully persisted save to IndexedDB for ROM:', romId, 'crc32:', data ? computeCrc32(data) : 'null');
+      // Read existing record
+      const getRequest = store.get(romId);
+      getRequest.onsuccess = () => {
+        const existingRecord = getRequest.result as PersistedSaveRecord | undefined;
+        const existingSaves = existingRecord?.saves ?? [];
+
+        const newSave: PersistedSaveState = {
+          data: toStoredBuffer(data),
+          updatedAt: Date.now(),
+          crc32: crc32,
+        };
+
+        let updatedSaves: PersistedSaveState[];
+
+        if (createNewState) {
+          // Add as a new save state
+          updatedSaves = [newSave, ...existingSaves];
+        } else {
+          // Update the most recent save state (or create first one)
+          if (existingSaves.length > 0) {
+            updatedSaves = [newSave, ...existingSaves.slice(1)];
+          } else {
+            updatedSaves = [newSave];
+          }
+        }
+
+        // Keep saves sorted by timestamp (most recent first)
+        updatedSaves.sort((a, b) => b.updatedAt - a.updatedAt);
+
+        const record: PersistedSaveRecord = { saves: updatedSaves };
+        const putRequest = store.put(record, romId);
+
+        putRequest.onsuccess = () => {
+          console.log('[ROM Scout] Successfully persisted save to IndexedDB for ROM:', romId, 'crc32:', crc32, 'total saves:', updatedSaves.length);
+          resolve();
+        };
+        putRequest.onerror = () => {
+          console.warn('Failed to persist EmulatorJS save data:', putRequest.error);
+          resolve();
+        };
+      };
+
+      getRequest.onerror = () => {
+        console.warn('Failed to read existing save data:', getRequest.error);
         resolve();
       };
-      request.onerror = () => {
-        console.warn('Failed to persist EmulatorJS save data:', request.error);
-        resolve();
-      };
+
       transaction.onerror = () => {
         console.warn('Failed to persist EmulatorJS save data:', transaction.error);
         resolve();
@@ -176,45 +225,65 @@ async function writePersistedSave(romId: string, data: Uint8Array | null): Promi
 interface StoredSaveData {
   data: Uint8Array;
   updatedAt: number | null;
+  crc32: string;
 }
 
-async function readPersistedSave(romId: string): Promise<StoredSaveData | null> {
+interface StoredSaveList {
+  saves: StoredSaveData[];
+}
+
+async function readPersistedSaves(romId: string): Promise<StoredSaveList> {
   const db = await openSaveDatabase();
   if (!db) {
-    console.log('[ROM Scout] IndexedDB not available, cannot read save');
-    return null;
+    console.log('[ROM Scout] IndexedDB not available, cannot read saves');
+    return { saves: [] };
   }
 
-  console.log('[ROM Scout] Reading save from IndexedDB for ROM:', romId);
+  console.log('[ROM Scout] Reading saves from IndexedDB for ROM:', romId);
 
-  return new Promise<StoredSaveData | null>((resolve) => {
+  return new Promise<StoredSaveList>((resolve) => {
     try {
       const transaction = db.transaction(SAVE_STORE_NAME, 'readonly');
       const store = transaction.objectStore(SAVE_STORE_NAME);
       const request = store.get(romId);
       request.onsuccess = () => {
-        const result = request.result as PersistedSaveRecord | ArrayBuffer | undefined;
+        const result = request.result;
         if (!result) {
           console.log('[ROM Scout] No saved data found in IndexedDB for ROM:', romId);
-          resolve(null);
+          resolve({ saves: [] });
           return;
         }
 
+        // Handle new multi-save format
+        if (result && typeof result === 'object' && 'saves' in result && Array.isArray(result.saves)) {
+          const record = result as PersistedSaveRecord;
+          const saves: StoredSaveData[] = record.saves.map(save => ({
+            data: new Uint8Array(save.data),
+            updatedAt: save.updatedAt,
+            crc32: save.crc32,
+          }));
+          console.log('[ROM Scout] Successfully read', saves.length, 'saves from IndexedDB for ROM:', romId);
+          resolve({ saves });
+          return;
+        }
+
+        // Handle legacy single-save format for backward compatibility
         let buffer: ArrayBuffer | undefined;
         let updatedAt: number | null = null;
         if (result instanceof ArrayBuffer) {
           buffer = result;
         } else if (result && typeof result === 'object' && 'data' in result) {
-          buffer = result.data;
-          if ('updatedAt' in result && typeof result.updatedAt === 'number') {
-            updatedAt = Number.isFinite(result.updatedAt) ? result.updatedAt : null;
+          buffer = (result as any).data;
+          if ('updatedAt' in result && typeof (result as any).updatedAt === 'number') {
+            updatedAt = Number.isFinite((result as any).updatedAt) ? (result as any).updatedAt : null;
           }
         }
 
         const saveData = buffer ? new Uint8Array(buffer) : null;
         if (saveData) {
+          const crc32 = computeCrc32(saveData);
           console.log(
-            '[ROM Scout] Successfully read save from IndexedDB for ROM:',
+            '[ROM Scout] Migrating legacy save from IndexedDB for ROM:',
             romId,
             'size:',
             saveData.length,
@@ -222,21 +291,21 @@ async function readPersistedSave(romId: string): Promise<StoredSaveData | null> 
             'updatedAt:',
             formatTimestamp(updatedAt),
             'crc32:',
-            computeCrc32(saveData)
+            crc32
           );
-          resolve({ data: saveData, updatedAt });
+          resolve({ saves: [{ data: saveData, updatedAt: updatedAt ?? Date.now(), crc32 }] });
         } else {
           console.log('[ROM Scout] Save data found but could not be converted for ROM:', romId);
-          resolve(null);
+          resolve({ saves: [] });
         }
       };
       request.onerror = () => {
         console.warn('Failed to read EmulatorJS save data:', request.error);
-        resolve(null);
+        resolve({ saves: [] });
       };
     } catch (error) {
       console.warn('Unexpected error while reading EmulatorJS save data:', error);
-      resolve(null);
+      resolve({ saves: [] });
     }
   });
 }
@@ -408,6 +477,12 @@ export interface RomPlayerOptions {
   autoLoadLoaderScript?: boolean;
 }
 
+export interface SaveStateInfo {
+  timestamp: number;
+  crc32: string;
+  formattedTimestamp: string;
+}
+
 export interface RomPlayerInstance {
   element: HTMLElement;
   core: string;
@@ -420,14 +495,25 @@ export interface RomPlayerInstance {
   destroy(): Promise<void>;
   /**
    * Force the emulator to persist its current save state, if persistence is available.
+   * If createNew is true, a new save state is created; otherwise, the most recent one is updated.
    * Returns true when save data was captured.
    */
-  persistSave(): Promise<boolean>;
+  persistSave(createNew?: boolean): Promise<boolean>;
   /**
    * Load the most recent persisted save into the running emulator, if available.
    * Returns true when save data was restored.
    */
   loadLatestSave(): Promise<boolean>;
+  /**
+   * Load a specific save state by timestamp.
+   * Returns true when save data was restored.
+   */
+  loadSaveByTimestamp(timestamp: number): Promise<boolean>;
+  /**
+   * List all available save states for this ROM.
+   * Returns an array of save state info, sorted by timestamp (most recent first).
+   */
+  listSaves(): Promise<SaveStateInfo[]>;
 }
 
 interface InternalPlayerInstance extends RomPlayerInstance {
@@ -546,6 +632,16 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     return false;
   };
 
+  instance.loadSaveByTimestamp = async () => {
+    console.log('[ROM Scout] Manual load by timestamp requested but persistence is not available for ROM:', romLabel);
+    return false;
+  };
+
+  instance.listSaves = async () => {
+    console.log('[ROM Scout] List saves requested but persistence is not available for ROM:', romLabel);
+    return [];
+  };
+
   if (persistenceKeys.length === 0 || !isIndexedDbAvailable()) {
     const reason = persistenceKeys.length === 0 ? 'no persistence keys' : 'IndexedDB not available';
     console.log('[ROM Scout] Persistent save not configured:', reason, 'for ROM:', romLabel);
@@ -635,19 +731,31 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     return 'failed';
   };
 
-  const loadPersistedState = async (reason: string): Promise<boolean> => {
-    console.log('[ROM Scout] Loading persisted save for ROM:', romLabel, 'reason:', reason, 'keys:', persistenceKeys.join(', '));
+  const loadPersistedState = async (reason: string, specificTimestamp?: number): Promise<boolean> => {
+    console.log('[ROM Scout] Loading persisted save for ROM:', romLabel, 'reason:', reason, 'timestamp:', specificTimestamp ?? 'latest', 'keys:', persistenceKeys.join(', '));
 
     const candidates: Array<{ key: string; data: Uint8Array; updatedAt: number | null }> = [];
 
     for (const key of persistenceKeys) {
       try {
-        const existing = await readPersistedSave(key);
-        if (!existing || existing.data.length === 0) {
+        const saveList = await readPersistedSaves(key);
+        if (saveList.saves.length === 0) {
           continue;
         }
 
-        candidates.push({ key, data: new Uint8Array(existing.data), updatedAt: existing.updatedAt });
+        // If a specific timestamp is requested, find that save
+        if (specificTimestamp !== undefined) {
+          const specificSave = saveList.saves.find(s => s.updatedAt === specificTimestamp);
+          if (specificSave && specificSave.data.length > 0) {
+            candidates.push({ key, data: new Uint8Array(specificSave.data), updatedAt: specificSave.updatedAt });
+          }
+        } else {
+          // Otherwise, use the most recent save
+          const mostRecent = saveList.saves[0];
+          if (mostRecent && mostRecent.data.length > 0) {
+            candidates.push({ key, data: new Uint8Array(mostRecent.data), updatedAt: mostRecent.updatedAt });
+          }
+        }
       } catch (error) {
         console.warn('[ROM Scout] Failed to read persisted save data for ROM:', romLabel, 'key:', key, 'reason:', reason, error);
       }
@@ -687,7 +795,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     return false;
   };
 
-  const persistState = async (reason: string): Promise<boolean> => {
+  const persistState = async (reason: string, createNew = false): Promise<boolean> => {
     const emulator = globalScope.EJS_emulator;
     if (!emulator) {
       console.log('[ROM Scout] No emulator instance available to save for ROM:', romLabel, 'reason:', reason);
@@ -716,9 +824,9 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
     try {
       for (const key of persistenceKeys) {
-        await writePersistedSave(key, stateData);
+        await writePersistedSave(key, stateData, createNew);
       }
-      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'keys:', persistenceKeys.join(', '), 'crc32:', computeCrc32(stateData));
+      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'createNew:', createNew, 'keys:', persistenceKeys.join(', '), 'crc32:', computeCrc32(stateData));
       return true;
     } catch (error) {
       console.warn('Failed to persist EmulatorJS save data:', error);
@@ -759,14 +867,48 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     triggerStartupLoad('startup immediate');
   }
 
-  instance.persistSave = async () => {
-    console.log('[ROM Scout] Manual save requested for ROM:', romLabel);
-    return persistState('manual');
+  instance.persistSave = async (createNew = false) => {
+    console.log('[ROM Scout] Manual save requested for ROM:', romLabel, 'createNew:', createNew);
+    return persistState('manual', createNew);
   };
 
   instance.loadLatestSave = async () => {
     console.log('[ROM Scout] Manual load requested for ROM:', romLabel);
     return loadPersistedState('manual');
+  };
+
+  instance.loadSaveByTimestamp = async (timestamp: number) => {
+    console.log('[ROM Scout] Manual load by timestamp requested for ROM:', romLabel, 'timestamp:', timestamp);
+    return loadPersistedState('manual', timestamp);
+  };
+
+  instance.listSaves = async () => {
+    console.log('[ROM Scout] List saves requested for ROM:', romLabel);
+    const allSaves: SaveStateInfo[] = [];
+
+    for (const key of persistenceKeys) {
+      try {
+        const saveList = await readPersistedSaves(key);
+        for (const save of saveList.saves) {
+          // Avoid duplicates by checking if we already have this timestamp
+          if (!allSaves.some(s => s.timestamp === save.updatedAt)) {
+            allSaves.push({
+              timestamp: save.updatedAt ?? 0,
+              crc32: save.crc32,
+              formattedTimestamp: formatTimestamp(save.updatedAt),
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('[ROM Scout] Failed to read save list for key:', key, error);
+      }
+    }
+
+    // Sort by timestamp, most recent first
+    allSaves.sort((a, b) => b.timestamp - a.timestamp);
+
+    console.log('[ROM Scout] Found', allSaves.length, 'save states for ROM:', romLabel);
+    return allSaves;
   };
 
   const originalDestroy = instance.destroy.bind(instance);
@@ -913,6 +1055,8 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
     },
     persistSave: async () => false,
     loadLatestSave: async () => false,
+    loadSaveByTimestamp: async () => false,
+    listSaves: async () => [],
   };
 
   setupPersistentSave(instance, options.metadata);
