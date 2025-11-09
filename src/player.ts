@@ -48,6 +48,7 @@ interface PersistedSaveState {
   data: ArrayBuffer;
   updatedAt: number;
   crc32: string;
+  isAutoSave?: boolean;
 }
 
 interface PersistedSaveRecord {
@@ -135,7 +136,7 @@ function toStoredBuffer(data: Uint8Array): ArrayBuffer {
   return data.slice().buffer;
 }
 
-async function writePersistedSave(romId: string, data: Uint8Array | null, createNewState = false): Promise<void> {
+async function writePersistedSave(romId: string, data: Uint8Array | null, createNewState = false, isAutoSave = false): Promise<void> {
   const db = await openSaveDatabase();
   if (!db) {
     console.log('[ROM Scout] IndexedDB not available, cannot persist save');
@@ -143,7 +144,7 @@ async function writePersistedSave(romId: string, data: Uint8Array | null, create
   }
 
   const crc32 = data ? computeCrc32(data) : 'null';
-  console.log('[ROM Scout] Writing save to IndexedDB for ROM:', romId, 'size:', data ? data.length : 0, 'crc32:', crc32, 'createNew:', createNewState);
+  console.log('[ROM Scout] Writing save to IndexedDB for ROM:', romId, 'size:', data ? data.length : 0, 'crc32:', crc32, 'createNew:', createNewState, 'isAutoSave:', isAutoSave);
 
   await new Promise<void>((resolve) => {
     try {
@@ -174,6 +175,7 @@ async function writePersistedSave(romId: string, data: Uint8Array | null, create
           data: toStoredBuffer(data),
           updatedAt: Date.now(),
           crc32: crc32,
+          isAutoSave: isAutoSave,
         };
 
         let updatedSaves: PersistedSaveState[];
@@ -226,6 +228,7 @@ interface StoredSaveData {
   data: Uint8Array;
   updatedAt: number | null;
   crc32: string;
+  isAutoSave: boolean;
 }
 
 interface StoredSaveList {
@@ -261,6 +264,7 @@ async function readPersistedSaves(romId: string): Promise<StoredSaveList> {
             data: new Uint8Array(save.data),
             updatedAt: save.updatedAt,
             crc32: save.crc32,
+            isAutoSave: save.isAutoSave ?? false,
           }));
           console.log('[ROM Scout] Successfully read', saves.length, 'saves from IndexedDB for ROM:', romId);
           resolve({ saves });
@@ -293,7 +297,7 @@ async function readPersistedSaves(romId: string): Promise<StoredSaveList> {
             'crc32:',
             crc32
           );
-          resolve({ saves: [{ data: saveData, updatedAt: updatedAt ?? Date.now(), crc32 }] });
+          resolve({ saves: [{ data: saveData, updatedAt: updatedAt ?? Date.now(), crc32, isAutoSave: false }] });
         } else {
           console.log('[ROM Scout] Save data found but could not be converted for ROM:', romId);
           resolve({ saves: [] });
@@ -481,6 +485,7 @@ export interface SaveStateInfo {
   timestamp: number;
   crc32: string;
   formattedTimestamp: string;
+  isAutoSave: boolean;
 }
 
 export interface RomPlayerInstance {
@@ -514,6 +519,10 @@ export interface RomPlayerInstance {
    * Returns an array of save state info, sorted by timestamp (most recent first).
    */
   listSaves(): Promise<SaveStateInfo[]>;
+  /**
+   * Restart the current ROM from the beginning.
+   */
+  restart(): Promise<void>;
 }
 
 interface InternalPlayerInstance extends RomPlayerInstance {
@@ -622,6 +631,9 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     )
   );
 
+  // Track which emulator managers have had getState called to ensure state is initialized
+  const initializedManagers = new WeakSet<EmulatorGameManager>();
+
   instance.persistSave = async () => {
     console.log('[ROM Scout] Manual save requested but persistence is not available for ROM:', romLabel);
     return false;
@@ -679,6 +691,17 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
     if (typeof manager.loadState === 'function') {
       try {
+        // Initialize state by calling getState first if not yet done
+        if (!initializedManagers.has(manager) && typeof manager.getState === 'function') {
+          try {
+            manager.getState(); // Discard result, just initializing
+            initializedManagers.add(manager);
+            console.log('[ROM Scout] Initialized emulator state by calling getState for ROM:', romLabel);
+          } catch (error) {
+            console.warn('[ROM Scout] Failed to initialize state via getState for ROM:', romLabel, error);
+          }
+        }
+
         const stateCopy = toUint8Array(pendingState);
         manager.loadState(stateCopy);
         restored = true;
@@ -811,6 +834,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     let stateData: Uint8Array | null = null;
     try {
       const payload = manager.getState();
+      initializedManagers.add(manager); // Mark as initialized
       stateData = extractSavePayload(payload);
     } catch (error) {
       console.warn('[ROM Scout] Failed to capture save state via gameManager.getState for ROM:', romLabel, 'reason:', reason, error);
@@ -823,10 +847,11 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     }
 
     try {
+      const isAutoSave = reason === 'destroy';
       for (const key of persistenceKeys) {
-        await writePersistedSave(key, stateData, createNew);
+        await writePersistedSave(key, stateData, createNew, isAutoSave);
       }
-      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'createNew:', createNew, 'keys:', persistenceKeys.join(', '), 'crc32:', computeCrc32(stateData));
+      console.log('[ROM Scout] Persisted save state for ROM:', romLabel, 'bytes:', stateData.length, 'reason:', reason, 'createNew:', createNew, 'isAutoSave:', isAutoSave, 'keys:', persistenceKeys.join(', '), 'crc32:', computeCrc32(stateData));
       return true;
     } catch (error) {
       console.warn('Failed to persist EmulatorJS save data:', error);
@@ -896,6 +921,7 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
               timestamp: save.updatedAt ?? 0,
               crc32: save.crc32,
               formattedTimestamp: formatTimestamp(save.updatedAt),
+              isAutoSave: save.isAutoSave,
             });
           }
         }
@@ -1057,6 +1083,18 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
     loadLatestSave: async () => false,
     loadSaveByTimestamp: async () => false,
     listSaves: async () => [],
+    restart: async () => {
+      const globalScope = globalThis as EmulatorGlobal;
+      const emulator = globalScope.EJS_emulator;
+      if (emulator && typeof emulator.callEvent === 'function') {
+        try {
+          emulator.callEvent('restart');
+          console.log('[ROM Scout] Restarted ROM via callEvent');
+        } catch (error) {
+          console.warn('[ROM Scout] Failed to restart ROM via callEvent:', error);
+        }
+      }
+    },
   };
 
   setupPersistentSave(instance, options.metadata);

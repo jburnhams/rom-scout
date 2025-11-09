@@ -260,7 +260,8 @@ async function updateSaveStateDropdown(playerInstance) {
       saves.forEach((save, index) => {
         const option = document.createElement('option');
         option.value = save.timestamp;
-        option.textContent = `${save.formattedTimestamp} - CRC32: ${save.crc32}`;
+        const saveType = save.isAutoSave ? 'Auto-save' : 'Manual';
+        option.textContent = `${save.formattedTimestamp} - ${saveType} - CRC32: ${save.crc32}`;
 
         // Select the most recent save by default
         if (index === 0) {
@@ -491,6 +492,21 @@ async function init() {
   // Set up close button
   document.getElementById('close-emulator').addEventListener('click', () => {
     void closeEmulator();
+  });
+
+  // Set up restart button
+  document.getElementById('restart-emulator').addEventListener('click', async () => {
+    if (activePlayerInstance) {
+      console.log('[ROM Scout Demo] Restart requested');
+      try {
+        await activePlayerInstance.restart();
+        console.log('[ROM Scout Demo] ROM restarted successfully');
+      } catch (error) {
+        console.error('[ROM Scout Demo] Failed to restart ROM:', error);
+      }
+    } else {
+      console.log('[ROM Scout Demo] No active ROM to restart');
+    }
   });
 
   // Note: Save/Load buttons are bound when a ROM is played to ensure

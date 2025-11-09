@@ -284,7 +284,7 @@ describe('startRomPlayer', () => {
       stateToReturn = { state: stateBytes };
       const manualSaveResult = await instance.persistSave();
       assert.strictEqual(manualSaveResult, true, 'persistSave should report success when data is captured');
-      assert.strictEqual(getStateCalls, 1, 'manual save should call gameManager.getState exactly once');
+      assert.strictEqual(getStateCalls, 2, 'getState should be called once for initialization during startup load and once for manual save');
       await waitForCondition(() => {
         const primary = savesStore.get(persistId) as FakeSaveRecord | undefined;
         const secondary = savesStore.get(romId) as FakeSaveRecord | undefined;
@@ -318,8 +318,8 @@ describe('startRomPlayer', () => {
       stateBytes = new Uint8Array([21, 22, 23]);
       stateToReturn = { state: stateBytes };
       await instance.destroy();
-      await waitForCondition(() => getStateCalls >= 2, 'destroy should persist the latest state');
-      assert.strictEqual(getStateCalls, 2, 'destroy should persist the latest state');
+      await waitForCondition(() => getStateCalls >= 3, 'destroy should persist the latest state');
+      assert.strictEqual(getStateCalls, 3, 'getState should be called for initialization, manual save, and destroy');
       await waitForCondition(() => {
         const primary = savesStore.get(persistId) as FakeSaveRecord | undefined;
         const secondary = savesStore.get(romId) as FakeSaveRecord | undefined;
