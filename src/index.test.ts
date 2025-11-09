@@ -38,28 +38,6 @@ describe('RomScout', () => {
       assert.ok(scout, 'RomScout instance should be created with config');
     });
 
-    it('should accept IGDB config', () => {
-      const scout = new RomScout({
-        provider: 'igdb',
-        igdb: {
-          clientId: 'test-client-id',
-          clientSecret: 'test-secret',
-        },
-      });
-      assert.ok(scout, 'RomScout instance should be created with IGDB config');
-    });
-
-    it('should accept ScreenScraper config', () => {
-      const scout = new RomScout({
-        provider: 'screenscraper',
-        screenscraper: {
-          devId: 'test-dev',
-          devPassword: 'test-pass',
-          softwareName: 'rom-scout-test',
-        },
-      });
-      assert.ok(scout, 'RomScout instance should be created with ScreenScraper config');
-    });
   });
 
   describe('hash method', () => {
@@ -219,30 +197,6 @@ describe('RomScout', () => {
           await scout.lookup({ md5: 'test' });
         },
         /Hasheous client not configured/,
-        'Should throw config error'
-      );
-    });
-
-    it('should throw error if IGDB not configured', async () => {
-      const scout = new RomScout({ provider: 'igdb' });
-
-      await assert.rejects(
-        async () => {
-          await scout.lookup({ filename: 'test.rom' });
-        },
-        /IGDB client not configured/,
-        'Should throw config error'
-      );
-    });
-
-    it('should throw error if ScreenScraper not configured', async () => {
-      const scout = new RomScout({ provider: 'screenscraper' });
-
-      await assert.rejects(
-        async () => {
-          await scout.lookup({ md5: 'test' });
-        },
-        /ScreenScraper client not configured/,
         'Should throw config error'
       );
     });

@@ -136,15 +136,7 @@ export class HasheousClient {
       title: data.name || 'Unknown',
       platform: data.platform?.name,
       publisher: data.publisher?.name,
-      // Note: Hasheous v1 API doesn't directly provide these fields
-      // They would need to be fetched from the metadata sources
-      year: undefined,
-      developer: undefined,
-      description: undefined,
-      genres: undefined,
-      players: undefined,
       images: images.length > 0 ? images : undefined,
-      rating: undefined,
       source: 'hasheous',
       raw: data,
     };

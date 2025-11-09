@@ -1,11 +1,11 @@
 # rom-scout
 
-A JavaScript/TypeScript library for identifying ROM files and fetching metadata from various gaming databases. Works in both browser and Node.js environments.
+A JavaScript/TypeScript library for identifying ROM files and fetching metadata from Hasheous. Works in both browser and Node.js environments.
 
 ## Features
 
 - **Hash Calculation**: Calculate MD5, SHA-1, and CRC32 hashes for ROM files
-- **Multiple Data Sources**: Support for Hasheous, IGDB, and ScreenScraper APIs
+- **Hasheous Integration**: Fetch metadata from the Hasheous API
 - **Browser & Node.js**: Works seamlessly in both environments
 - **TypeScript**: Full TypeScript support with type definitions
 - **Multi-format**: Available as ESM, CommonJS, and browser bundles
@@ -68,8 +68,8 @@ npm install rom-scout
     if (metadata) {
       console.log('Game:', metadata.title);
       console.log('Platform:', metadata.platform);
-      console.log('Year:', metadata.year);
-      console.log('Cover art:', metadata.images);
+      console.log('Publisher:', metadata.publisher);
+      console.log('Images:', metadata.images);
     }
   });
 </script>
@@ -104,8 +104,6 @@ const metadata = await scout.identify(romData, 'pacman.zip');
 console.log('Game:', metadata.title);
 console.log('Platform:', metadata.platform);
 console.log('Publisher:', metadata.publisher);
-console.log('Year:', metadata.year);
-console.log('Description:', metadata.description);
 
 // Access cover art and screenshots
 if (metadata.images) {
@@ -142,39 +140,6 @@ const scout = new RomScout({
 });
 ```
 
-### IGDB (Internet Game Database)
-
-Requires API credentials from [IGDB](https://api-docs.igdb.com/).
-
-```typescript
-const scout = new RomScout({
-  provider: 'igdb',
-  igdb: {
-    clientId: 'your-client-id',
-    clientSecret: 'your-client-secret'
-  }
-});
-```
-
-**Note:** IGDB doesn't support hash-based lookups, so it uses filename matching.
-
-### ScreenScraper
-
-Requires account from [ScreenScraper](https://www.screenscraper.fr/).
-
-```typescript
-const scout = new RomScout({
-  provider: 'screenscraper',
-  screenscraper: {
-    devId: 'your-dev-id',
-    devPassword: 'your-dev-password',
-    softwareName: 'your-app-name',
-    username: 'optional-username',
-    password: 'optional-password'
-  }
-});
-```
-
 ## API Reference
 
 ### RomScout Class
@@ -185,19 +150,9 @@ Create a new RomScout instance.
 
 ```typescript
 interface RomScoutConfig {
-  provider?: 'hasheous' | 'igdb' | 'screenscraper';
+  provider?: 'hasheous';
   hasheousUrl?: string;
-  igdb?: {
-    clientId: string;
-    clientSecret: string;
-  };
-  screenscraper?: {
-    devId: string;
-    devPassword: string;
-    softwareName: string;
-    username?: string;
-    password?: string;
-  };
+  corsProxy?: string;
   timeout?: number;
 }
 ```
@@ -252,7 +207,7 @@ Try multiple providers in sequence until metadata is found.
 ```typescript
 async lookupMultiple(
   request: HashLookupRequest,
-  providers?: Array<'hasheous' | 'igdb' | 'screenscraper'>
+  providers?: Array<'hasheous'>
 ): Promise<RomMetadata | null>
 ```
 
@@ -292,16 +247,13 @@ async function calculateSingleHash(
 
 ```typescript
 interface RomMetadata {
+  id: string;
+  persistId?: string;
+  alternateIds?: string[];
   title: string;
   platform?: string;
-  year?: number;
   publisher?: string;
-  developer?: string;
-  description?: string;
-  genres?: string[];
-  players?: string;
   images?: ImageMetadata[];
-  rating?: number;
   source: string;
   raw?: unknown;
 }
@@ -332,27 +284,6 @@ const hashes = await scout.hash(romData);
 console.log('MD5:', hashes.md5);
 console.log('SHA-1:', hashes.sha1);
 console.log('CRC32:', hashes.crc32);
-```
-
-### Try Multiple Providers
-
-```typescript
-const scout = new RomScout({
-  hasheousUrl: 'https://hasheous.example.com',
-  igdb: {
-    clientId: 'your-id',
-    clientSecret: 'your-secret'
-  }
-});
-
-const request = {
-  md5: 'abc123...',
-  sha1: 'def456...',
-  filename: 'game.rom'
-};
-
-// Try Hasheous first, then IGDB if not found
-const metadata = await scout.lookupMultiple(request, ['hasheous', 'igdb']);
 ```
 
 ### Browser File Upload Example
@@ -388,9 +319,7 @@ const metadata = await scout.lookupMultiple(request, ['hasheous', 'igdb']);
           result.innerHTML = `
             <h2>${metadata.title}</h2>
             <p><strong>Platform:</strong> ${metadata.platform || 'Unknown'}</p>
-            <p><strong>Year:</strong> ${metadata.year || 'Unknown'}</p>
             <p><strong>Publisher:</strong> ${metadata.publisher || 'Unknown'}</p>
-            <p><strong>Description:</strong> ${metadata.description || 'No description'}</p>
             ${metadata.images && metadata.images.length > 0 ? `
               <img src="${metadata.images[0].url}" alt="Cover" style="max-width: 300px">
             ` : ''}
@@ -459,8 +388,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Acknowledgments
 
 - [Hasheous](https://github.com/Hasheous/Hasheous) - Open-source ROM metadata server
-- [IGDB](https://www.igdb.com/) - Internet Game Database
-- [ScreenScraper](https://www.screenscraper.fr/) - ROM metadata service
 - [crc-32](https://github.com/SheetJS/js-crc32) - CRC32 implementation
 
 ## Related Projects

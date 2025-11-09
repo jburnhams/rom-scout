@@ -1,7 +1,7 @@
 {
   "name": "rom-scout",
   "version": "0.1.18",
-  "description": "A JavaScript library for identifying ROM files and fetching metadata from Hasheous, IGDB, and ScreenScraper APIs",
+  "description": "A JavaScript library for identifying ROM files and fetching metadata from Hasheous",
   "repository": {
     "type": "git",
     "url": "https://github.com/jburnhams/rom-scout.git"
@@ -65,8 +65,6 @@
     "metadata",
     "scraper",
     "hasheous",
-    "igdb",
-    "screenscraper",
     "retro-gaming",
     "game-identification"
   ],

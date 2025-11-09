@@ -105,9 +105,7 @@ const metadata = await scout.identify(file);
 if (metadata) {
   console.log('Title:', metadata.title);
   console.log('Platform:', metadata.platform);
-  console.log('Year:', metadata.year);
   console.log('Publisher:', metadata.publisher);
-  console.log('Description:', metadata.description);
 
   // Display cover art if available
   if (metadata.images && metadata.images.length > 0) {
@@ -154,189 +152,12 @@ if (metadata) {
       </div>
     </section>
 
-    <!-- Example 3: IGDB API -->
+    <!-- Example 3: Extensibility -->
     <section class="example">
-      <h3>3. IGDB API - Filename-based Lookup</h3>
+      <h3>3. Extensibility Hooks</h3>
       <p>
-        Fetch metadata from IGDB (Internet Game Database). Requires API credentials from
-        <a href="https://api-docs.igdb.com/" target="_blank">IGDB</a>.
-      </p>
-
-      <div class="code-block">
-        <div class="code-header">
-          <span>JavaScript</span>
-          <button class="run-btn" data-example="igdb">Run Example</button>
-        </div>
-        <pre><code>import { RomScout } from 'rom-scout';
-
-// Create a scout instance with IGDB
-const scout = new RomScout({
-  provider: 'igdb',
-  igdb: {
-    clientId: 'your-client-id',
-    clientSecret: 'your-client-secret'
-  }
-});
-
-// Load a ROM file
-const file = document.getElementById('rom-file').files[0];
-
-// Identify the ROM (IGDB uses filename matching)
-const metadata = await scout.identify(file);
-
-if (metadata) {
-  console.log('Title:', metadata.title);
-  console.log('Platform:', metadata.platform);
-  console.log('Year:', metadata.year);
-  console.log('Genres:', metadata.genres);
-  console.log('Rating:', metadata.rating);
-}</code></pre>
-      </div>
-
-      <div class="demo-area">
-        <div class="api-config">
-          <label>
-            Client ID:
-            <input
-              type="text"
-              id="igdb-client-id"
-              placeholder="your-client-id"
-              class="api-input"
-            >
-          </label>
-          <label>
-            Client Secret:
-            <input
-              type="password"
-              id="igdb-client-secret"
-              placeholder="your-client-secret"
-              class="api-input"
-            >
-          </label>
-          <div class="config-note">
-            <strong>Note:</strong> IGDB uses filename-based matching, not hash-based lookup.
-            Get credentials at <a href="https://api-docs.igdb.com/" target="_blank">IGDB API docs</a>.
-          </div>
-        </div>
-        <div class="file-info" data-result="result-igdb">
-          <label>
-            <strong>Select ROM:</strong>
-            <select class="rom-select">
-              <option value="pacman">Pac-Man (pacman.zip)</option>
-              <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
-            </select>
-          </label>
-        </div>
-        <div id="result-igdb" class="result"></div>
-      </div>
-    </section>
-
-    <!-- Example 4: ScreenScraper API -->
-    <section class="example">
-      <h3>4. ScreenScraper API - Multi-hash Lookup</h3>
-      <p>
-        Fetch metadata from ScreenScraper. Requires developer credentials from
-        <a href="https://www.screenscraper.fr/" target="_blank">ScreenScraper</a>.
-      </p>
-
-      <div class="code-block">
-        <div class="code-header">
-          <span>JavaScript</span>
-          <button class="run-btn" data-example="screenscraper">Run Example</button>
-        </div>
-        <pre><code>import { RomScout } from 'rom-scout';
-
-// Create a scout instance with ScreenScraper
-const scout = new RomScout({
-  provider: 'screenscraper',
-  screenscraper: {
-    devId: 'your-dev-id',
-    devPassword: 'your-dev-password',
-    softwareName: 'rom-scout-demo',
-    username: 'optional-username',  // optional
-    password: 'optional-password'   // optional
-  }
-});
-
-// Load a ROM file
-const file = document.getElementById('rom-file').files[0];
-
-// Identify the ROM
-const metadata = await scout.identify(file);
-
-if (metadata) {
-  console.log('Title:', metadata.title);
-  console.log('Platform:', metadata.platform);
-  console.log('Year:', metadata.year);
-  console.log('Publisher:', metadata.publisher);
-  console.log('Developer:', metadata.developer);
-  console.log('Genres:', metadata.genres);
-}</code></pre>
-      </div>
-
-      <div class="demo-area">
-        <div class="api-config">
-          <label>
-            Dev ID:
-            <input
-              type="text"
-              id="ss-dev-id"
-              placeholder="your-dev-id"
-              class="api-input"
-            >
-          </label>
-          <label>
-            Dev Password:
-            <input
-              type="password"
-              id="ss-dev-password"
-              placeholder="your-dev-password"
-              class="api-input"
-            >
-          </label>
-          <label>
-            Username (optional):
-            <input
-              type="text"
-              id="ss-username"
-              placeholder="optional-username"
-              class="api-input"
-            >
-          </label>
-          <label>
-            Password (optional):
-            <input
-              type="password"
-              id="ss-password"
-              placeholder="optional-password"
-              class="api-input"
-            >
-          </label>
-          <div class="config-note">
-            <strong>Note:</strong> ScreenScraper supports multiple hash types for accurate matching.
-            Register at <a href="https://www.screenscraper.fr/" target="_blank">ScreenScraper</a>
-            to get developer credentials.
-          </div>
-        </div>
-        <div class="file-info" data-result="result-screenscraper">
-          <label>
-            <strong>Select ROM:</strong>
-            <select class="rom-select">
-              <option value="pacman">Pac-Man (pacman.zip)</option>
-              <option value="sonic">Sonic the Hedgehog (sonic.bin)</option>
-            </select>
-          </label>
-        </div>
-        <div id="result-screenscraper" class="result"></div>
-      </div>
-    </section>
-
-    <!-- Example 5: Multiple Providers -->
-    <section class="example">
-      <h3>5. Try Multiple Providers</h3>
-      <p>
-        Automatically try multiple providers in sequence until metadata is found.
-        This is useful for fallback scenarios.
+        The <code>lookupMultiple</code> helper is available for future multi-provider setups.
+        Today it simply wraps the Hasheous lookup so you can plug in your own providers later.
       </p>
 
       <div class="code-block">
@@ -345,18 +166,9 @@ if (metadata) {
         </div>
         <pre><code>import { RomScout } from 'rom-scout';
 
-// Configure multiple providers
+// Configure Hasheous (additional providers can be added in the future)
 const scout = new RomScout({
-  hasheousUrl: 'https://your-hasheous-instance.com',
-  igdb: {
-    clientId: 'your-client-id',
-    clientSecret: 'your-client-secret'
-  },
-  screenscraper: {
-    devId: 'your-dev-id',
-    devPassword: 'your-dev-password',
-    softwareName: 'rom-scout-demo'
-  }
+  hasheousUrl: 'https://your-hasheous-instance.com'
 });
 
 // Load a ROM file
@@ -373,10 +185,10 @@ const request = {
   filename: file.name
 };
 
-// Try providers in order: Hasheous, then IGDB, then ScreenScraper
+// Try providers in order (currently only Hasheous)
 const metadata = await scout.lookupMultiple(
   request,
-  ['hasheous', 'igdb', 'screenscraper']
+  ['hasheous']
 );
 
 if (metadata) {

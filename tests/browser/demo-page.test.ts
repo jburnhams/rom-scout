@@ -180,8 +180,6 @@ describe('Demo Page - Browser Environment Simulation', () => {
       'calculateHash',
       'calculateSingleHash',
       'HasheousClient',
-      'IGDBClient',
-      'ScreenScraperClient',
       'isZipArchive',
       'isArchiveFilename',
       'extractZipFiles',

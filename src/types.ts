@@ -7,28 +7,13 @@
  */
 export interface RomScoutConfig {
   /** API provider to use (defaults to 'hasheous') */
-  provider?: 'hasheous' | 'igdb' | 'screenscraper';
+  provider?: 'hasheous';
 
   /** Base URL for Hasheous API */
   hasheousUrl?: string;
 
   /** Optional CORS proxy prefix for Hasheous API (e.g., 'https://proxy.corsfix.com/?') */
   corsProxy?: string;
-
-  /** IGDB API credentials */
-  igdb?: {
-    clientId: string;
-    clientSecret: string;
-  };
-
-  /** ScreenScraper API credentials */
-  screenscraper?: {
-    devId: string;
-    devPassword: string;
-    softwareName: string;
-    username?: string;
-    password?: string;
-  };
 
   /** Timeout for API requests in milliseconds (defaults to 30000) */
   timeout?: number;
@@ -70,29 +55,11 @@ export interface RomMetadata {
   /** Platform/system name */
   platform?: string;
 
-  /** Release year */
-  year?: number;
-
   /** Publisher */
   publisher?: string;
 
-  /** Developer */
-  developer?: string;
-
-  /** Game description */
-  description?: string;
-
-  /** Genre(s) */
-  genres?: string[];
-
-  /** Players (e.g., '1-2') */
-  players?: string;
-
   /** Cover/box art images */
   images?: ImageMetadata[];
-
-  /** Rating (0-100) */
-  rating?: number;
 
   /** Source API that provided the metadata */
   source: string;

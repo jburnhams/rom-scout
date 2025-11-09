@@ -12,7 +12,5 @@ const mod = await import(pathToFileURL(esmPath).href);
 assert.strictEqual(typeof mod.RomScout, 'function', 'ESM build should export RomScout');
 assert.strictEqual(typeof mod.calculateHash, 'function', 'ESM build should export calculateHash');
 assert.strictEqual(typeof mod.HasheousClient, 'function', 'ESM build should export HasheousClient');
-assert.strictEqual(typeof mod.IGDBClient, 'function', 'ESM build should export IGDBClient');
-assert.strictEqual(typeof mod.ScreenScraperClient, 'function', 'ESM build should export ScreenScraperClient');
 
 console.log('✓ ESM smoke test passed');

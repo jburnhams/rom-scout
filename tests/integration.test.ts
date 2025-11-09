@@ -160,7 +160,6 @@ describe('Integration Tests - Documentation Examples', () => {
         console.log('\nHasheous API Results (Pac-Man):');
         console.log('  Title:', metadata.title);
         console.log('  Platform:', metadata.platform);
-        console.log('  Year:', metadata.year);
         console.log('  Publisher:', metadata.publisher);
         console.log('  Source:', metadata.source);
 
@@ -278,10 +277,9 @@ describe('Integration Tests - Documentation Examples', () => {
           console.log('  Warning: No images found in response');
         }
 
-        // Note: Hasheous v1 /api/v1/Lookup/ByHash endpoint does not directly provide:
-        // - year, developer, description, genres, players, rating
-        // These would need to be fetched from the metadata sources (IGDB, TheGamesDB, etc.)
-        // using the metadata IDs provided in the raw response
+        // Note: Hasheous v1 /api/v1/Lookup/ByHash endpoint focuses on identifiers,
+        // platform, publisher, and imagery. Additional metadata can be obtained by
+        // following the references in the raw response if desired.
 
         console.log('\n  ✓ Sonic the Hedgehog successfully identified via Hasheous');
         console.log('  ✓ Title, platform, publisher, and images verified');
@@ -306,173 +304,7 @@ describe('Integration Tests - Documentation Examples', () => {
     });
   });
 
-  describe('Example 3: IGDB API', () => {
-    it('should create IGDB client with credentials', () => {
-      const scout = new RomScout({
-        provider: 'igdb',
-        igdb: {
-          clientId: 'test-client-id',
-          clientSecret: 'test-client-secret'
-        }
-      });
-
-      assert.ok(scout, 'RomScout instance should be created');
-    });
-
-    it('should throw error if IGDB credentials not provided', async () => {
-      const scout = new RomScout({
-        provider: 'igdb'
-      });
-
-      await assert.rejects(
-        async () => {
-          await scout.lookup({ filename: 'test.rom' });
-        },
-        /IGDB client not configured/,
-        'Should throw error when IGDB credentials are missing'
-      );
-    });
-
-    // Note: Actual API call test requires IGDB credentials
-    // This would be enabled if IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables are set
-    if (process.env.IGDB_CLIENT_ID && process.env.IGDB_CLIENT_SECRET) {
-      it('should fetch metadata from IGDB API', async () => {
-        const scout = new RomScout({
-          provider: 'igdb',
-          igdb: {
-            clientId: process.env.IGDB_CLIENT_ID!,
-            clientSecret: process.env.IGDB_CLIENT_SECRET!
-          }
-        });
-
-        try {
-          const metadata = await scout.identify(pacmanBuffer, 'pacman.zip');
-
-          if (metadata) {
-            console.log('\nIGDB API Results:');
-            console.log('  Title:', metadata.title);
-            console.log('  Platform:', metadata.platform);
-            console.log('  Year:', metadata.year);
-            console.log('  Genres:', metadata.genres);
-            console.log('  Source:', metadata.source);
-
-            assert.strictEqual(metadata.source, 'igdb');
-            assert.ok(metadata.title, 'Title should be present');
-          } else {
-            console.log('\nIGDB API: Game not found');
-          }
-        } catch (error) {
-          console.error('IGDB API error:', error);
-          throw error;
-        }
-      });
-    } else {
-      it.skip('should fetch metadata from IGDB API (requires IGDB credentials)', () => {
-        console.log('\n  ℹ To test IGDB API, set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables');
-        console.log('    Get credentials from: https://api-docs.igdb.com/');
-      });
-    }
-  });
-
-  describe('Example 4: ScreenScraper API', () => {
-    it('should create ScreenScraper client with credentials', () => {
-      const scout = new RomScout({
-        provider: 'screenscraper',
-        screenscraper: {
-          devId: 'test-dev-id',
-          devPassword: 'test-dev-password',
-          softwareName: 'rom-scout-test'
-        }
-      });
-
-      assert.ok(scout, 'RomScout instance should be created');
-    });
-
-    it('should throw error if ScreenScraper credentials not provided', async () => {
-      const scout = new RomScout({
-        provider: 'screenscraper'
-      });
-
-      await assert.rejects(
-        async () => {
-          await scout.lookup({ md5: 'test' });
-        },
-        /ScreenScraper client not configured/,
-        'Should throw error when ScreenScraper credentials are missing'
-      );
-    });
-
-    // Note: Actual API call test requires ScreenScraper credentials
-    // This would be enabled if SS_DEV_ID and SS_DEV_PASSWORD environment variables are set
-    if (process.env.SS_DEV_ID && process.env.SS_DEV_PASSWORD) {
-      it('should fetch metadata from ScreenScraper API', async () => {
-        const config: any = {
-          provider: 'screenscraper',
-          screenscraper: {
-            devId: process.env.SS_DEV_ID,
-            devPassword: process.env.SS_DEV_PASSWORD,
-            softwareName: 'rom-scout-integration-test'
-          }
-        };
-
-        // Add optional user credentials if provided
-        if (process.env.SS_USERNAME) {
-          config.screenscraper.username = process.env.SS_USERNAME;
-        }
-        if (process.env.SS_PASSWORD) {
-          config.screenscraper.password = process.env.SS_PASSWORD;
-        }
-
-        const scout = new RomScout(config);
-
-        try {
-          const metadata = await scout.identify(pacmanBuffer, 'pacman.zip');
-
-          if (metadata) {
-            console.log('\nScreenScraper API Results:');
-            console.log('  Title:', metadata.title);
-            console.log('  Platform:', metadata.platform);
-            console.log('  Year:', metadata.year);
-            console.log('  Publisher:', metadata.publisher);
-            console.log('  Developer:', metadata.developer);
-            console.log('  Source:', metadata.source);
-
-            assert.strictEqual(metadata.source, 'screenscraper');
-            assert.ok(metadata.title, 'Title should be present');
-          } else {
-            console.log('\nScreenScraper API: ROM not found in database');
-          }
-        } catch (error) {
-          console.error('ScreenScraper API error:', error);
-          throw error;
-        }
-      });
-    } else {
-      it.skip('should fetch metadata from ScreenScraper API (requires SS credentials)', () => {
-        console.log('\n  ℹ To test ScreenScraper API, set SS_DEV_ID and SS_DEV_PASSWORD environment variables');
-        console.log('    Register at: https://www.screenscraper.fr/');
-      });
-    }
-  });
-
-  describe('Example 5: Multiple Providers', () => {
-    it('should create scout with multiple provider configs', () => {
-      const scout = new RomScout({
-        hasheousUrl: 'https://hasheous.example.com',
-        igdb: {
-          clientId: 'test-client-id',
-          clientSecret: 'test-client-secret'
-        },
-        screenscraper: {
-          devId: 'test-dev-id',
-          devPassword: 'test-dev-password',
-          softwareName: 'rom-scout-test'
-        }
-      });
-
-      assert.ok(scout, 'RomScout instance should be created');
-    });
-
+  describe('Example 3: Extensibility', () => {
     it('should have lookupMultiple method', async () => {
       const scout = new RomScout();
 
@@ -544,21 +376,10 @@ describe('Integration Tests - Documentation Examples', () => {
       console.log('   ✓ Free to use');
       console.log('   ✓ Public access: YES');
 
-      console.log('\n3. IGDB API:');
-      console.log('   ⚠ Requires Twitch API credentials (Client ID + Secret)');
-      console.log('   ⚠ Free tier available but registration required');
-      console.log('   ✗ Public access: NO (requires registration)');
-
-      console.log('\n4. ScreenScraper API:');
-      console.log('   ⚠ Requires developer account (Dev ID + Dev Password)');
-      console.log('   ⚠ Free tier available but registration required');
-      console.log('   ✗ Public access: NO (requires registration)');
-
       console.log('\n=== Recommendation ===');
       console.log('For the interactive demo to work with real API calls:');
       console.log('- Hash calculation works immediately (no setup needed)');
-      console.log('- Hasheous API works immediately (using public instance)');
-      console.log('- IGDB and ScreenScraper require users to provide their own credentials\n');
+      console.log('- Hasheous API works immediately (using public instance)\n');
 
       // This "test" always passes, it's just informational
       assert.ok(true);

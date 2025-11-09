@@ -4,8 +4,6 @@
 
 import { calculateHash } from './hash.js';
 import { HasheousClient } from './api/hasheous.js';
-import { IGDBClient } from './api/igdb.js';
-import { ScreenScraperClient } from './api/screenscraper.js';
 import { isZipArchive, isArchiveFilename, extractZipFiles } from './archive.js';
 import type {
   RomScoutConfig,
@@ -41,8 +39,6 @@ import type { HashResult } from './hash.js';
 export class RomScout {
   private config: RomScoutConfig;
   private hasheousClient?: HasheousClient;
-  private igdbClient?: IGDBClient;
-  private screenScraperClient?: ScreenScraperClient;
 
   constructor(config: RomScoutConfig = {}) {
     this.config = {
@@ -68,26 +64,6 @@ export class RomScout {
       });
     }
 
-    // IGDB
-    if (this.config.igdb) {
-      this.igdbClient = new IGDBClient({
-        clientId: this.config.igdb.clientId,
-        clientSecret: this.config.igdb.clientSecret,
-        timeout: this.config.timeout,
-      });
-    }
-
-    // ScreenScraper
-    if (this.config.screenscraper) {
-      this.screenScraperClient = new ScreenScraperClient({
-        devId: this.config.screenscraper.devId,
-        devPassword: this.config.screenscraper.devPassword,
-        softwareName: this.config.screenscraper.softwareName,
-        username: this.config.screenscraper.username,
-        password: this.config.screenscraper.password,
-        timeout: this.config.timeout,
-      });
-    }
   }
 
   /**
@@ -276,18 +252,6 @@ export class RomScout {
         }
         return this.hasheousClient.lookup(request);
 
-      case 'igdb':
-        if (!this.igdbClient) {
-          throw new Error('IGDB client not configured. Provide igdb credentials in config.');
-        }
-        return this.igdbClient.lookup(request);
-
-      case 'screenscraper':
-        if (!this.screenScraperClient) {
-          throw new Error('ScreenScraper client not configured. Provide screenscraper credentials in config.');
-        }
-        return this.screenScraperClient.lookup(request);
-
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }
@@ -302,9 +266,9 @@ export class RomScout {
    */
   async lookupMultiple(
     request: HashLookupRequest,
-    providers?: Array<'hasheous' | 'igdb' | 'screenscraper'>
+    providers?: Array<'hasheous'>
   ): Promise<RomMetadata | null> {
-    const providersToTry = providers || ['hasheous', 'igdb', 'screenscraper'];
+    const providersToTry = providers || ['hasheous'];
 
     for (const provider of providersToTry) {
       try {

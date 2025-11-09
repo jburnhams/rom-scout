@@ -27,7 +27,6 @@ try {
 // Global state
 let pacmanFile = null;
 let sonicFile = null;
-let currentRomFile = null;
 
 /**
  * Load the pacman.zip file
@@ -136,35 +135,16 @@ function formatMetadataResult(metadata) {
     html += `<div class="result-field"><strong>Platform:</strong> ${escapeHtml(metadata.platform)}</div>`;
   }
 
-  if (metadata.year) {
-    html += `<div class="result-field"><strong>Year:</strong> ${metadata.year}</div>`;
-  }
-
   if (metadata.publisher) {
     html += `<div class="result-field"><strong>Publisher:</strong> ${escapeHtml(metadata.publisher)}</div>`;
   }
 
-  if (metadata.developer) {
-    html += `<div class="result-field"><strong>Developer:</strong> ${escapeHtml(metadata.developer)}</div>`;
+  if (metadata.persistId) {
+    html += `<div class="result-field"><strong>Persistent ID:</strong> ${escapeHtml(metadata.persistId)}</div>`;
   }
 
-  if (metadata.genres && metadata.genres.length > 0) {
-    html += `<div class="result-field"><strong>Genres:</strong> ${metadata.genres.map(escapeHtml).join(', ')}</div>`;
-  }
-
-  if (metadata.players) {
-    html += `<div class="result-field"><strong>Players:</strong> ${escapeHtml(metadata.players)}</div>`;
-  }
-
-  if (metadata.rating) {
-    html += `<div class="result-field"><strong>Rating:</strong> ${metadata.rating}/100</div>`;
-  }
-
-  if (metadata.description) {
-    const truncated = metadata.description.length > 200
-      ? metadata.description.substring(0, 200) + '...'
-      : metadata.description;
-    html += `<div class="result-field" style="margin-top: 0.5rem;"><strong>Description:</strong><br>${escapeHtml(truncated)}</div>`;
+  if (metadata.alternateIds && metadata.alternateIds.length > 0) {
+    html += `<div class="result-field"><strong>Alternate IDs:</strong> ${metadata.alternateIds.map(escapeHtml).join(', ')}</div>`;
   }
 
   html += `<div class="result-field" style="margin-top: 1rem; color: #6b7280;"><strong>Source:</strong> ${escapeHtml(metadata.source)}</div>`;
@@ -281,94 +261,6 @@ async function runHasheousExample() {
 }
 
 /**
- * Example 3: IGDB API
- */
-async function runIgdbExample() {
-  const romFile = getSelectedRomFile('result-igdb');
-
-  if (!romFile) {
-    showError('result-igdb', 'ROM file not loaded');
-    return;
-  }
-
-  const clientId = document.getElementById('igdb-client-id').value.trim();
-  const clientSecret = document.getElementById('igdb-client-secret').value.trim();
-
-  if (!clientId || !clientSecret) {
-    showError('result-igdb', 'Please enter both Client ID and Client Secret');
-    return;
-  }
-
-  showLoading('result-igdb');
-
-  try {
-    const scout = new RomScout({
-      provider: 'igdb',
-      igdb: {
-        clientId: clientId,
-        clientSecret: clientSecret
-      }
-    });
-
-    const metadata = await scout.identify(romFile);
-
-    console.log('IGDB result:', metadata);
-    showSuccess('result-igdb', formatMetadataResult(metadata));
-  } catch (error) {
-    console.error('IGDB API error:', error);
-    showError('result-igdb', error);
-  }
-}
-
-/**
- * Example 4: ScreenScraper API
- */
-async function runScreenScraperExample() {
-  const romFile = getSelectedRomFile('result-screenscraper');
-
-  if (!romFile) {
-    showError('result-screenscraper', 'ROM file not loaded');
-    return;
-  }
-
-  const devId = document.getElementById('ss-dev-id').value.trim();
-  const devPassword = document.getElementById('ss-dev-password').value.trim();
-  const username = document.getElementById('ss-username').value.trim();
-  const password = document.getElementById('ss-password').value.trim();
-
-  if (!devId || !devPassword) {
-    showError('result-screenscraper', 'Please enter both Dev ID and Dev Password');
-    return;
-  }
-
-  showLoading('result-screenscraper');
-
-  try {
-    const config = {
-      provider: 'screenscraper',
-      screenscraper: {
-        devId: devId,
-        devPassword: devPassword,
-        softwareName: 'rom-scout-demo'
-      }
-    };
-
-    // Add optional credentials if provided
-    if (username) config.screenscraper.username = username;
-    if (password) config.screenscraper.password = password;
-
-    const scout = new RomScout(config);
-    const metadata = await scout.identify(romFile);
-
-    console.log('ScreenScraper result:', metadata);
-    showSuccess('result-screenscraper', formatMetadataResult(metadata));
-  } catch (error) {
-    console.error('ScreenScraper API error:', error);
-    showError('result-screenscraper', error);
-  }
-}
-
-/**
  * Initialize the demo
  */
 async function init() {
@@ -411,12 +303,6 @@ async function init() {
               break;
             case 'hasheous':
               await runHasheousExample();
-              break;
-            case 'igdb':
-              await runIgdbExample();
-              break;
-            case 'screenscraper':
-              await runScreenScraperExample();
               break;
             default:
               console.error('Unknown example:', example);
