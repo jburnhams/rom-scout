@@ -876,20 +876,68 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
       }
     }
 
-    if (pendingState) {
-      const outcome = applyPendingState('ready');
-      if (outcome !== 'restored') {
-        console.log('[ROM Scout] Save data still pending after ready event for ROM:', romLabel, 'status:', outcome);
+    // Set up event listener for when the game actually starts
+    const setupGameStartListener = () => {
+      const emulator = globalScope.EJS_emulator;
+      if (!emulator || !emulator.events) {
+        console.log('[ROM Scout] Emulator not ready for event listener setup for ROM:', romLabel);
+        return;
       }
-    } else {
-      triggerStartupLoad('startup');
+
+      // Hook into EmulatorJS event system to listen for game-start
+      const originalEvents = emulator.events;
+      const gameStartEventKey = 'game-start';
+
+      if (!originalEvents[gameStartEventKey]) {
+        originalEvents[gameStartEventKey] = { functions: [] };
+      }
+
+      const gameStartHandler = () => {
+        console.log('[ROM Scout] Game start event detected for ROM:', romLabel);
+
+        // Small delay to ensure the game is fully initialized
+        setTimeout(() => {
+          if (pendingState) {
+            const outcome = applyPendingState('game-start');
+            if (outcome !== 'restored') {
+              console.log('[ROM Scout] Save data still pending after game-start event for ROM:', romLabel, 'status:', outcome);
+            }
+          } else if (!startupLoadAttempted) {
+            triggerStartupLoad('game-start');
+          }
+        }, 100);
+      };
+
+      if (originalEvents[gameStartEventKey].functions) {
+        originalEvents[gameStartEventKey].functions.push(gameStartHandler);
+      }
+
+      console.log('[ROM Scout] Registered game-start event listener for ROM:', romLabel);
+    };
+
+    // Try to setup the event listener immediately
+    setupGameStartListener();
+
+    // Also poll for emulator availability if not ready yet
+    if (!globalScope.EJS_emulator) {
+      const pollInterval = setInterval(() => {
+        if (globalScope.EJS_emulator) {
+          clearInterval(pollInterval);
+          setupGameStartListener();
+        }
+      }, 100);
+
+      // Stop polling after 10 seconds
+      setTimeout(() => clearInterval(pollInterval), 10000);
     }
   };
 
   globalScope.EJS_ready = readyWrapper;
 
+  // If emulator already exists, call the ready wrapper to set up event listeners
   if (globalScope.EJS_emulator) {
-    triggerStartupLoad('startup immediate');
+    console.log('[ROM Scout] Emulator already exists, setting up event listeners for ROM:', romLabel);
+    readyWrapper();
   }
 
   instance.persistSave = async (createNew = false) => {
