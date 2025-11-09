@@ -275,8 +275,12 @@ describe('startRomPlayer', () => {
       const postManualSecondary = savesStore.get(romId) as FakeSaveRecord | undefined;
       assert.ok(postManualPrimary, 'Manual save should write to IndexedDB using persistId');
       assert.ok(postManualSecondary, 'Manual save should mirror data under ROM id');
-      assert.deepStrictEqual(Array.from(new Uint8Array(postManualPrimary!.data)), Array.from(stateBytes));
-      assert.deepStrictEqual(Array.from(new Uint8Array(postManualSecondary!.data)), Array.from(stateBytes));
+      // Check new multi-save format
+      assert.ok('saves' in postManualPrimary!, 'Should use new multi-save format');
+      assert.ok('saves' in postManualSecondary!, 'Should use new multi-save format');
+      assert.strictEqual(postManualPrimary!.saves.length, 1, 'Should have one save state');
+      assert.deepStrictEqual(Array.from(new Uint8Array(postManualPrimary!.saves[0].data)), Array.from(stateBytes));
+      assert.deepStrictEqual(Array.from(new Uint8Array(postManualSecondary!.saves[0].data)), Array.from(stateBytes));
 
       const manualLoadData = new Uint8Array([11, 12, 13, 14]);
       savesStore.set(romId, { data: manualLoadData.buffer.slice(0), updatedAt: Date.now() });
@@ -297,8 +301,11 @@ describe('startRomPlayer', () => {
       const finalSecondary = savesStore.get(romId) as FakeSaveRecord | undefined;
       assert.ok(finalPrimary, 'Destroy should update the persisted save primary key');
       assert.ok(finalSecondary, 'Destroy should update the persisted save secondary key');
-      assert.deepStrictEqual(Array.from(new Uint8Array(finalPrimary!.data)), Array.from(stateBytes));
-      assert.deepStrictEqual(Array.from(new Uint8Array(finalSecondary!.data)), Array.from(stateBytes));
+      // Check new multi-save format
+      assert.ok('saves' in finalPrimary!, 'Should use new multi-save format');
+      assert.ok('saves' in finalSecondary!, 'Should use new multi-save format');
+      assert.deepStrictEqual(Array.from(new Uint8Array(finalPrimary!.saves[0].data)), Array.from(stateBytes));
+      assert.deepStrictEqual(Array.from(new Uint8Array(finalSecondary!.saves[0].data)), Array.from(stateBytes));
       assert.ok(!callEventHistory.includes('load'), 'load events should not be triggered when loadState succeeds');
 
       const readyAfterDestroy = globalAny.EJS_ready;
@@ -336,7 +343,13 @@ describe('startRomPlayer', () => {
 });
 
 
-type FakeSaveRecord = { data: ArrayBuffer; updatedAt: number };
+type FakeSaveRecord = {
+  saves: Array<{ data: ArrayBuffer; updatedAt: number; crc32: string }>;
+} | {
+  // Legacy format for backward compatibility testing
+  data: ArrayBuffer;
+  updatedAt: number;
+};
 
 function createFakeIndexedDB() {
   const stores = new Map<string, Map<string, FakeSaveRecord>>();

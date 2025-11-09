@@ -235,6 +235,51 @@ function addRomFromFile(file) {
 }
 
 /**
+ * Update the save state dropdown with available saves
+ */
+async function updateSaveStateDropdown(playerInstance) {
+  const dropdown = document.getElementById('save-state-selector');
+
+  if (!playerInstance) {
+    dropdown.innerHTML = '<option value="">No saves available</option>';
+    dropdown.disabled = true;
+    return;
+  }
+
+  try {
+    const saves = await playerInstance.listSaves();
+
+    dropdown.innerHTML = '';
+
+    if (saves.length === 0) {
+      dropdown.innerHTML = '<option value="">No saves available</option>';
+      dropdown.disabled = true;
+    } else {
+      dropdown.disabled = false;
+
+      saves.forEach((save, index) => {
+        const option = document.createElement('option');
+        option.value = save.timestamp;
+        option.textContent = `${save.formattedTimestamp} - CRC32: ${save.crc32}`;
+
+        // Select the most recent save by default
+        if (index === 0) {
+          option.selected = true;
+        }
+
+        dropdown.appendChild(option);
+      });
+    }
+
+    console.log('[ROM Scout Demo] Dropdown updated with', saves.length, 'save states');
+  } catch (error) {
+    console.error('[ROM Scout Demo] Failed to list saves:', error);
+    dropdown.innerHTML = '<option value="">Error loading saves</option>';
+    dropdown.disabled = true;
+  }
+}
+
+/**
  * Bind save/load buttons to the current player instance
  */
 function bindSaveLoadButtons(playerInstance) {
@@ -256,11 +301,14 @@ function bindSaveLoadButtons(playerInstance) {
       return;
     }
 
-    console.log('[ROM Scout Demo] Manual save requested');
+    console.log('[ROM Scout Demo] Manual save requested (creating new state)');
     try {
-      const saved = await playerInstance.persistSave();
+      // Pass true to create a new save state instead of overwriting
+      const saved = await playerInstance.persistSave(true);
       if (saved) {
         console.log('[ROM Scout Demo] Manual save completed successfully');
+        // Refresh the dropdown to show the new save
+        await updateSaveStateDropdown(playerInstance);
       } else {
         console.log('[ROM Scout Demo] Manual save finished without new data');
       }
@@ -275,9 +323,18 @@ function bindSaveLoadButtons(playerInstance) {
       return;
     }
 
-    console.log('[ROM Scout Demo] Manual load requested');
+    const dropdown = document.getElementById('save-state-selector');
+    const selectedTimestamp = dropdown.value;
+
+    if (!selectedTimestamp) {
+      console.log('[ROM Scout Demo] No save state selected');
+      return;
+    }
+
+    console.log('[ROM Scout Demo] Manual load requested for timestamp:', selectedTimestamp);
     try {
-      const restored = await playerInstance.loadLatestSave();
+      const timestamp = parseInt(selectedTimestamp, 10);
+      const restored = await playerInstance.loadSaveByTimestamp(timestamp);
       if (restored) {
         console.log('[ROM Scout Demo] Manual load restored save data');
       } else {
@@ -291,6 +348,9 @@ function bindSaveLoadButtons(playerInstance) {
   // Attach new handlers
   saveButton.addEventListener('click', currentSaveHandler);
   loadButton.addEventListener('click', currentLoadHandler);
+
+  // Update the dropdown with available saves
+  updateSaveStateDropdown(playerInstance);
 
   console.log('[ROM Scout Demo] Save/Load buttons bound to current player instance');
 }
