@@ -664,10 +664,41 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
   const globalScope = globalThis as EmulatorGlobal;
   const previousReady = typeof globalScope.EJS_ready === 'function' ? globalScope.EJS_ready : null;
+  const previousOnGameStart = typeof (globalScope as any).EJS_onGameStart === 'function' ? (globalScope as any).EJS_onGameStart : null;
 
   let pendingState: Uint8Array | null = null;
   let destroyInProgress: Promise<void> | null = null;
   let startupLoadAttempted = false;
+
+  // Track timeouts and intervals for cleanup
+  const activeTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  const activeIntervals = new Set<ReturnType<typeof setInterval>>();
+
+  const scheduleTimeout = (callback: () => void, delay: number): ReturnType<typeof setTimeout> => {
+    const timeoutId = setTimeout(() => {
+      activeTimeouts.delete(timeoutId);
+      callback();
+    }, delay);
+    activeTimeouts.add(timeoutId);
+    return timeoutId;
+  };
+
+  const scheduleInterval = (callback: () => void, delay: number): ReturnType<typeof setInterval> => {
+    const intervalId = setInterval(callback, delay);
+    activeIntervals.add(intervalId);
+    return intervalId;
+  };
+
+  const clearAllScheduled = () => {
+    for (const timeoutId of activeTimeouts) {
+      clearTimeout(timeoutId);
+    }
+    for (const intervalId of activeIntervals) {
+      clearInterval(intervalId);
+    }
+    activeTimeouts.clear();
+    activeIntervals.clear();
+  };
 
   const applyPendingState = (reason: string): 'restored' | 'queued' | 'failed' => {
     if (!pendingState || pendingState.length === 0) {
@@ -806,6 +837,9 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
       if (outcome === 'queued') {
         console.log('[ROM Scout] Persisted save queued until emulator ready for ROM:', romLabel, 'key:', candidate.key, 'reason:', reason, 'updatedAt:', formatTimestamp(candidate.updatedAt), 'crc32:', computeCrc32(candidate.data));
+        // Start retry mechanism with exponential backoff
+        retryAttempt = 0; // Reset retry counter
+        retryApplyPendingState(reason);
         return false;
       }
 
@@ -867,6 +901,48 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     void loadPersistedState(reason);
   };
 
+  // Retry mechanism with exponential backoff when save is queued
+  let retryAttempt = 0;
+  const maxRetries = 8; // Max 8 retries: 200ms, 400ms, 800ms, 1600ms, 3200ms, 6400ms, 12800ms, 25600ms (~51 seconds total)
+
+  const retryApplyPendingState = (reason: string) => {
+    if (!pendingState) {
+      console.log('[ROM Scout] No pending state to retry for ROM:', romLabel);
+      return;
+    }
+
+    if (retryAttempt >= maxRetries) {
+      console.warn('[ROM Scout] Max retry attempts reached for ROM:', romLabel, 'giving up on autoload');
+      pendingState = null;
+      return;
+    }
+
+    const delay = Math.min(200 * Math.pow(2, retryAttempt), 30000); // Cap at 30 seconds
+    retryAttempt++;
+
+    console.log('[ROM Scout] Scheduling retry', retryAttempt, 'of', maxRetries, 'in', delay, 'ms for ROM:', romLabel);
+
+    scheduleTimeout(() => {
+      if (!pendingState) {
+        console.log('[ROM Scout] Pending state cleared, aborting retry for ROM:', romLabel);
+        return;
+      }
+
+      const outcome = applyPendingState(`${reason}-retry-${retryAttempt}`);
+
+      if (outcome === 'restored') {
+        console.log('[ROM Scout] Successfully restored save on retry', retryAttempt, 'for ROM:', romLabel);
+        retryAttempt = 0;
+      } else if (outcome === 'queued') {
+        console.log('[ROM Scout] Save still queued after retry', retryAttempt, 'for ROM:', romLabel);
+        retryApplyPendingState(reason);
+      } else {
+        console.log('[ROM Scout] Failed to restore save on retry', retryAttempt, 'for ROM:', romLabel);
+        retryAttempt = 0;
+      }
+    }, delay);
+  };
+
   // Set up event listener for when the game actually starts
   const setupGameStartListener = () => {
     const emulator = globalScope.EJS_emulator;
@@ -887,10 +963,14 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
       console.log('[ROM Scout] Game start event detected for ROM:', romLabel);
 
       // Small delay to ensure the game is fully initialized
-      setTimeout(() => {
+      scheduleTimeout(() => {
         if (pendingState) {
           const outcome = applyPendingState('game-start');
-          if (outcome !== 'restored') {
+          if (outcome === 'queued') {
+            console.log('[ROM Scout] Save data queued after game-start event for ROM:', romLabel);
+            retryAttempt = 0;
+            retryApplyPendingState('game-start');
+          } else if (outcome !== 'restored') {
             console.log('[ROM Scout] Save data still pending after game-start event for ROM:', romLabel, 'status:', outcome);
           }
         } else if (!startupLoadAttempted) {
@@ -907,6 +987,33 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     return true;
   };
 
+  // Official EJS_onGameStart callback for better reliability
+  const onGameStartWrapper = () => {
+    console.log('[ROM Scout] EJS_onGameStart called for ROM:', romLabel);
+
+    if (previousOnGameStart) {
+      try {
+        previousOnGameStart();
+      } catch (error) {
+        console.warn('Error in existing EmulatorJS onGameStart callback:', error);
+      }
+    }
+
+    // Use a small delay to ensure the game is fully initialized
+    scheduleTimeout(() => {
+      if (pendingState) {
+        const outcome = applyPendingState('onGameStart');
+        if (outcome === 'queued') {
+          console.log('[ROM Scout] Save data queued after onGameStart for ROM:', romLabel);
+          retryAttempt = 0;
+          retryApplyPendingState('onGameStart');
+        }
+      } else if (!startupLoadAttempted) {
+        triggerStartupLoad('onGameStart');
+      }
+    }, 100);
+  };
+
   const readyWrapper = () => {
     if (previousReady) {
       try {
@@ -916,49 +1023,66 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
       }
     }
 
-    // Try to setup the event listener immediately
-    let eventListenerRegistered = setupGameStartListener();
+    // Try to setup the internal event listener (legacy approach)
+    const eventListenerRegistered = setupGameStartListener();
 
-    // If event listener couldn't be registered and emulator exists, fall back to immediate load
-    if (!eventListenerRegistered && globalScope.EJS_emulator) {
-      console.log('[ROM Scout] Event listener not available, using fallback load for ROM:', romLabel);
-      // Use a small delay to allow emulator to initialize
-      setTimeout(() => {
+    // If event listener couldn't be registered, fall back to polling with timeout-based retry
+    if (!eventListenerRegistered) {
+      console.log('[ROM Scout] Event listener not available, using fallback with retry mechanism for ROM:', romLabel);
+
+      // Poll for emulator and game manager availability
+      let pollCount = 0;
+      const maxPolls = 50; // 50 * 200ms = 10 seconds max
+
+      const pollInterval = scheduleInterval(() => {
+        pollCount++;
+
+        if (pollCount >= maxPolls) {
+          activeIntervals.delete(pollInterval);
+          clearInterval(pollInterval);
+          console.warn('[ROM Scout] Max polling time reached for ROM:', romLabel, 'stopping poll');
+          return;
+        }
+
+        const emulator = globalScope.EJS_emulator;
+        if (emulator && emulator.gameManager) {
+          activeIntervals.delete(pollInterval);
+          clearInterval(pollInterval);
+          console.log('[ROM Scout] Game manager available after', pollCount * 200, 'ms for ROM:', romLabel);
+
+          // Try to setup event listener now that emulator is available
+          setupGameStartListener();
+
+          // Whether or not event listener was registered, try to load
+          if (pendingState) {
+            const outcome = applyPendingState('poll-success');
+            if (outcome === 'queued') {
+              retryAttempt = 0;
+              retryApplyPendingState('poll-success');
+            }
+          } else if (!startupLoadAttempted) {
+            triggerStartupLoad('poll-success');
+          }
+        }
+      }, 200);
+    } else {
+      // Event listener registered successfully, but also do a fallback load attempt
+      scheduleTimeout(() => {
         if (pendingState) {
-          applyPendingState('ready-fallback');
-        } else {
+          const outcome = applyPendingState('ready-fallback');
+          if (outcome === 'queued') {
+            retryAttempt = 0;
+            retryApplyPendingState('ready-fallback');
+          }
+        } else if (!startupLoadAttempted) {
           triggerStartupLoad('ready-fallback');
         }
       }, 100);
     }
-
-    // Also poll for emulator availability if not ready yet
-    if (!globalScope.EJS_emulator) {
-      const pollInterval = setInterval(() => {
-        if (globalScope.EJS_emulator) {
-          clearInterval(pollInterval);
-          const registered = setupGameStartListener();
-
-          // If still can't register event listener, use fallback
-          if (!registered) {
-            console.log('[ROM Scout] Event listener not available after polling, using fallback load for ROM:', romLabel);
-            setTimeout(() => {
-              if (pendingState) {
-                applyPendingState('poll-fallback');
-              } else {
-                triggerStartupLoad('poll-fallback');
-              }
-            }, 100);
-          }
-        }
-      }, 100);
-
-      // Stop polling after 10 seconds
-      setTimeout(() => clearInterval(pollInterval), 10000);
-    }
   };
 
   globalScope.EJS_ready = readyWrapper;
+  (globalScope as any).EJS_onGameStart = onGameStartWrapper;
 
   // If emulator already exists, set up event listeners or fallback load without calling readyWrapper
   // (readyWrapper will be called by EmulatorJS or the test)
@@ -969,9 +1093,13 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     // If event listener couldn't be registered, schedule fallback load
     if (!eventListenerRegistered) {
       console.log('[ROM Scout] Event listener not available, scheduling fallback load for ROM:', romLabel);
-      setTimeout(() => {
+      scheduleTimeout(() => {
         if (pendingState) {
-          applyPendingState('existing-emulator-fallback');
+          const outcome = applyPendingState('existing-emulator-fallback');
+          if (outcome === 'queued') {
+            retryAttempt = 0;
+            retryApplyPendingState('existing-emulator-fallback');
+          }
         } else {
           triggerStartupLoad('existing-emulator-fallback');
         }
@@ -1034,13 +1162,29 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
 
     const destroyPromise = (async () => {
       try {
+        // Clear all pending timeouts and intervals
+        clearAllScheduled();
+        console.log('[ROM Scout] Cleared all scheduled timeouts and intervals for ROM:', romLabel);
+
+        // Clear pending state to prevent any retries
+        pendingState = null;
+
         await persistState('destroy', true);
 
+        // Restore previous callbacks
         if (globalScope.EJS_ready === readyWrapper) {
           if (previousReady) {
             globalScope.EJS_ready = previousReady;
           } else {
             delete globalScope.EJS_ready;
+          }
+        }
+
+        if ((globalScope as any).EJS_onGameStart === onGameStartWrapper) {
+          if (previousOnGameStart) {
+            (globalScope as any).EJS_onGameStart = previousOnGameStart;
+          } else {
+            delete (globalScope as any).EJS_onGameStart;
           }
         }
       } finally {
