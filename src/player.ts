@@ -413,6 +413,7 @@ interface EmulatorGameManager {
   getState?: () => unknown;
   loadState?: (state: Uint8Array) => void;
   setState?: (state: Uint8Array) => void;
+  restart?: () => void;
 }
 
 interface EmulatorInstance {
@@ -1315,16 +1316,30 @@ export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlay
     loadSaveByTimestamp: async () => false,
     listSaves: async () => [],
     restart: async () => {
+      if (instance.destroyed) {
+        console.warn('[ROM Scout] Restart requested on destroyed instance');
+        return;
+      }
+
       const globalScope = globalThis as EmulatorGlobal;
       const emulator = globalScope.EJS_emulator;
-      if (emulator && typeof emulator.callEvent === 'function') {
+      if (!emulator) {
+        console.warn('[ROM Scout] No EmulatorJS instance available to restart ROM');
+        return;
+      }
+
+      const gameManager = emulator.gameManager;
+      if (gameManager && typeof gameManager.restart === 'function') {
         try {
-          emulator.callEvent('restart');
-          console.log('[ROM Scout] Restarted ROM via callEvent');
+          gameManager.restart();
+          console.log('[ROM Scout] Restarted ROM via EmulatorJS gameManager.restart()');
+          return;
         } catch (error) {
-          console.warn('[ROM Scout] Failed to restart ROM via callEvent:', error);
+          console.warn('[ROM Scout] Failed to restart ROM via EmulatorJS gameManager.restart():', error);
         }
       }
+
+      console.warn('[ROM Scout] EmulatorJS instance does not expose a restart mechanism');
     },
   };
 
