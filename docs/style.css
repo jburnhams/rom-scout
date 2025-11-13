@@ -26,6 +26,30 @@ body {
   background-color: var(--bg-color);
 }
 
+.build-badge {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(30, 41, 59, 0.9);
+  color: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow);
+  z-index: 10000;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .build-badge {
+    font-size: 0.7rem;
+    top: 0.75rem;
+    right: 0.75rem;
+  }
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;

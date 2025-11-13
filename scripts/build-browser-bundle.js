@@ -24,6 +24,7 @@ const distDir = path.join(projectRoot, 'dist');
 const browserDistDir = path.join(distDir, 'browser');
 const docsSourceDir = path.join(projectRoot, 'docs');
 const docsDistDir = path.join(projectRoot, 'docs-dist');
+const BUILD_TIME_PLACEHOLDER = '__BUILD_TIME__';
 
 function assertExists(targetPath, message) {
   if (!fs.existsSync(targetPath)) {
@@ -57,6 +58,40 @@ function copyDocs() {
   console.log('Copying docs source files...');
   fs.rmSync(docsDistDir, { recursive: true, force: true });
   copyRecursive(docsSourceDir, docsDistDir);
+}
+
+function injectBuildTimestamp(targetDir, buildTimestamp) {
+  if (!fs.existsSync(targetDir)) {
+    return;
+  }
+
+  const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const entryPath = path.join(targetDir, entry.name);
+
+    if (entry.isDirectory()) {
+      injectBuildTimestamp(entryPath, buildTimestamp);
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const ext = path.extname(entry.name).toLowerCase();
+    if (ext !== '.html') {
+      continue;
+    }
+
+    const original = fs.readFileSync(entryPath, 'utf8');
+    if (!original.includes(BUILD_TIME_PLACEHOLDER)) {
+      continue;
+    }
+
+    const updated = original.replaceAll(BUILD_TIME_PLACEHOLDER, buildTimestamp);
+    fs.writeFileSync(entryPath, updated);
+  }
 }
 
 function copyBrowserBundles() {
@@ -122,6 +157,8 @@ function copyRomFiles() {
 }
 
 copyDocs();
+const buildTimestamp = new Date().toISOString();
+injectBuildTimestamp(docsDistDir, buildTimestamp);
 copyBrowserBundles();
 copyEsmBundle();
 copyRomFiles();
