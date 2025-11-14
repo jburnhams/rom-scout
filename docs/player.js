@@ -3,14 +3,14 @@
  */
 
 // Import the library from local build
-let RomScout, startRomPlayer;
+let RomScout, RomPlayer;
 let activePlayerInstance = null;
 let currentSaveHandler = null;
 let currentLoadHandler = null;
 try {
   const module = await import('./rom-scout.esm.js');
   RomScout = module.RomScout;
-  startRomPlayer = module.startRomPlayer;
+  RomPlayer = module.RomPlayer;
   console.log('Loaded rom-scout from local build');
 } catch (error) {
   console.error('Failed to load rom-scout library:', error);
@@ -386,7 +386,7 @@ async function playRom(rom) {
       activePlayerInstance = null;
     }
 
-    activePlayerInstance = await startRomPlayer({
+    activePlayerInstance = await RomPlayer.start({
       target: emulatorDiv,
       file: rom.file,
       filename: rom.filename,

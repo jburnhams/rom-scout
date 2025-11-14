@@ -177,6 +177,7 @@ describe('Demo Page - Browser Environment Simulation', () => {
     // Verify all expected exports are present
     const expectedExports = [
       'RomScout',
+      'RomPlayer',
       'calculateHash',
       'calculateSingleHash',
       'HasheousClient',
