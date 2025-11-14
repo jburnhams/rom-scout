@@ -1,14 +1,19 @@
 # rom-scout
 
-A JavaScript/TypeScript library for identifying ROM files and fetching metadata from Hasheous. Works in both browser and Node.js environments.
+rom-scout is an end-to-end toolkit for working with classic game ROMs. It
+identifies files via hashing, fetches metadata from a Hasheous server, and can
+boot games directly in the browser through the built-in EmulatorJS-powered
+player.
 
-## Features
+## Highlights
 
-- **Hash Calculation**: Calculate MD5, SHA-1, and CRC32 hashes for ROM files
-- **Hasheous Integration**: Fetch metadata from the Hasheous API
-- **Browser & Node.js**: Works seamlessly in both environments
-- **TypeScript**: Full TypeScript support with type definitions
-- **Multi-format**: Available as ESM, CommonJS, and browser bundles
+- **File identification** – calculate MD5/SHA-1/CRC32 hashes for ROMs and zip
+  archives.
+- **Metadata lookup** – query Hasheous for titles, platforms, artwork, and more.
+- **Emulator playback** – launch ROMs with the bundled `RomPlayer` class to
+  embed EmulatorJS in a web page.
+- **Universal delivery** – ship as ESM, CommonJS, and browser bundles with full
+  TypeScript definitions.
 
 ## TypeScript Support
 
@@ -44,73 +49,57 @@ title screens, etc.) alongside any metadata that accompanies each image.
 npm install rom-scout
 ```
 
-## Quick Start
+## Quick start
 
-### Browser Usage
+### Identify a ROM (Node.js or browser bundler)
 
-```html
-<!-- Using ESM bundle -->
-<script type="module">
-  import { RomScout } from 'https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js';
-
-  const scout = new RomScout({
-    provider: 'hasheous',
-    hasheousUrl: 'https://your-hasheous-instance.com'
-  });
-
-  // Handle file input
-  document.getElementById('rom-file').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-
-    // Identify the ROM
-    const metadata = await scout.identify(file);
-
-    if (metadata) {
-      console.log('Game:', metadata.title);
-      console.log('Platform:', metadata.platform);
-      console.log('Publisher:', metadata.publisher);
-      console.log('Images:', metadata.images);
-    }
-  });
-</script>
-
-<!-- Or using IIFE bundle -->
-<script src="https://unpkg.com/rom-scout/dist/browser/rom-scout.min.js"></script>
-<script>
-  const scout = new RomScout.RomScout({
-    hasheousUrl: 'https://your-hasheous-instance.com'
-  });
-</script>
-```
-
-### Node.js Usage
-
-```typescript
+```ts
 import { RomScout } from 'rom-scout';
-import { readFileSync } from 'fs';
 
-// Create a scout instance
 const scout = new RomScout({
   provider: 'hasheous',
-  hasheousUrl: 'https://your-hasheous-instance.com'
+  hasheousUrl: 'https://your-hasheous-instance.com',
 });
 
-// Load a ROM file
-const romData = readFileSync('pacman.zip');
+const metadata = await scout.identify(fileOrBuffer, 'optional-filename.zip');
 
-// Identify the ROM
-const metadata = await scout.identify(romData, 'pacman.zip');
+console.log(metadata?.title);
+console.log(metadata?.images?.map((image) => `${image.type}: ${image.url}`));
+```
 
-console.log('Game:', metadata.title);
-console.log('Platform:', metadata.platform);
-console.log('Publisher:', metadata.publisher);
+### Launch a ROM in the browser
 
-// Access cover art and screenshots
-if (metadata.images) {
-  for (const image of metadata.images) {
-    console.log(`${image.type}: ${image.url}`);
-  }
-}
+```ts
+import { RomPlayer } from 'rom-scout';
+
+const player = await RomPlayer.start({
+  romUrl: '/roms/super-mario-world.smc',
+  metadata,
+  mountNode: document.getElementById('player'),
+});
+
+// Persist manual saves in IndexedDB
+await player.persistSave();
+
+// Tear down when leaving the page
+await player.destroy();
+```
+
+For zero-build sites you can load the browser bundle instead:
+
+```html
+<script type="module">
+  import { RomScout, RomPlayer } from 'https://unpkg.com/rom-scout/dist/bundles/rom-scout.esm.js';
+
+  const scout = new RomScout({ hasheousUrl: 'https://your-hasheous-instance.com' });
+  const metadata = await scout.identify(file);
+
+  await RomPlayer.start({
+    romData: file,
+    metadata,
+    mountNode: document.querySelector('#player'),
+  });
+</script>
 ```
 
 ## Browser Build Warnings
@@ -210,6 +199,20 @@ async lookupMultiple(
   providers?: Array<'hasheous'>
 ): Promise<RomMetadata | null>
 ```
+
+### RomPlayer class
+
+`RomPlayer` wraps EmulatorJS with lifecycle helpers and IndexedDB persistence.
+
+- `static async start(options: RomPlayerOptions): Promise<RomPlayerInstance>` –
+  boot a ROM from a URL or binary blob and mount the emulator into a DOM node.
+- `persistSave(options?)` – snapshot manual or auto saves into IndexedDB so they
+  can be restored on the next launch.
+- `destroy()` – tear down the EmulatorJS instance, remove listeners, and release
+  persistent saves.
+
+The `RomPlayerInstance` returned from `start` also surfaces helpers such as
+`restart`, `clearPersistedSave`, and `exportSave` for advanced workflows.
 
 ### Standalone Functions
 
