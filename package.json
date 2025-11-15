@@ -1,6 +1,6 @@
 {
   "name": "rom-scout",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "A toolkit for identifying ROM files, fetching Hasheous metadata, and launching games with EmulatorJS",
   "repository": {
     "type": "git",
