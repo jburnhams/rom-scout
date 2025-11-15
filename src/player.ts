@@ -489,54 +489,184 @@ export interface SaveStateInfo {
   isAutoSave: boolean;
 }
 
-export interface RomPlayerInstance {
-  element: HTMLElement;
-  core: string;
+export class RomPlayer {
+  public readonly element: HTMLElement;
+  public readonly core: string;
   /**
    * Object URL that EmulatorJS will load. Consumers should call `destroy()` to release it.
    */
-  gameUrl: string | Blob;
-  metadata?: Partial<RomMetadata>;
-  filename?: string;
-  destroy(): Promise<void>;
-  /**
-   * Force the emulator to persist its current save state, if persistence is available.
-   * If createNew is true, a new save state is created; otherwise, the most recent one is updated.
-   * Returns true when save data was captured.
-   */
-  persistSave(createNew?: boolean): Promise<boolean>;
-  /**
-   * Load the most recent persisted save into the running emulator, if available.
-   * Returns true when save data was restored.
-   */
-  loadLatestSave(): Promise<boolean>;
-  /**
-   * Load a specific save state by timestamp.
-   * Returns true when save data was restored.
-   */
-  loadSaveByTimestamp(timestamp: number): Promise<boolean>;
-  /**
-   * List all available save states for this ROM.
-   * Returns an array of save state info, sorted by timestamp (most recent first).
-   */
-  listSaves(): Promise<SaveStateInfo[]>;
-  /**
-   * Restart the current ROM from the beginning.
-   */
-  restart(): Promise<void>;
+  public readonly gameUrl: string | Blob;
+  public readonly metadata?: Partial<RomMetadata>;
+  public readonly filename?: string;
+
+  public persistSave: (createNew?: boolean) => Promise<boolean>;
+  public loadLatestSave: () => Promise<boolean>;
+  public loadSaveByTimestamp: (timestamp: number) => Promise<boolean>;
+  public listSaves: () => Promise<SaveStateInfo[]>;
+  public restart: () => Promise<void>;
+  public destroy: () => Promise<void>;
+
+  private loaderScript: HTMLScriptElement | null;
+  private destroyed = false;
+  private readonly objectUrlCreated: boolean;
+
+  private constructor(
+    element: HTMLElement,
+    core: string,
+    gameUrl: string | Blob,
+    metadata?: Partial<RomMetadata>,
+    filename?: string,
+    objectUrlCreated = false,
+  ) {
+    this.element = element;
+    this.core = core;
+    this.gameUrl = gameUrl;
+    this.metadata = metadata;
+    this.filename = filename;
+    this.objectUrlCreated = objectUrlCreated;
+    this.loaderScript = null;
+
+    this.persistSave = async () => {
+      console.log('[ROM Scout] Manual save requested but persistence is not available for ROM:', this.describe());
+      return false;
+    };
+
+    this.loadLatestSave = async () => {
+      console.log('[ROM Scout] Manual load requested but persistence is not available for ROM:', this.describe());
+      return false;
+    };
+
+    this.loadSaveByTimestamp = async () => {
+      console.log('[ROM Scout] Manual load by timestamp requested but persistence is not available for ROM:', this.describe());
+      return false;
+    };
+
+    this.listSaves = async () => {
+      console.log('[ROM Scout] List saves requested but persistence is not available for ROM:', this.describe());
+      return [];
+    };
+
+    this.restart = async () => {
+      if (this.destroyed) {
+        console.warn('[ROM Scout] Restart requested on destroyed instance');
+        return;
+      }
+
+      const globalScope = globalThis as EmulatorGlobal;
+      const emulator = globalScope.EJS_emulator;
+      if (!emulator) {
+        console.warn('[ROM Scout] No EmulatorJS instance available to restart ROM');
+        return;
+      }
+
+      const gameManager = emulator.gameManager;
+      if (gameManager && typeof gameManager.restart === 'function') {
+        try {
+          gameManager.restart();
+          console.log('[ROM Scout] Restarted ROM via EmulatorJS gameManager.restart()');
+          return;
+        } catch (error) {
+          console.warn('[ROM Scout] Failed to restart ROM via EmulatorJS gameManager.restart():', error);
+        }
+      }
+
+      console.warn('[ROM Scout] EmulatorJS instance does not expose a restart mechanism');
+    };
+
+    this.destroy = async () => {
+      if (this.destroyed) {
+        return;
+      }
+      this.destroyed = true;
+
+      try {
+        clearEmulatorConfig(this);
+      } finally {
+        if (this.loaderScript && this.loaderScript.isConnected) {
+          this.loaderScript.remove();
+        }
+
+        if (typeof this.gameUrl === 'string' && this.objectUrlCreated) {
+          const urlFactory = getUrlFactory();
+          if (urlFactory && typeof urlFactory.revokeObjectURL === 'function') {
+            try {
+              urlFactory.revokeObjectURL(this.gameUrl);
+            } catch (error) {
+              console.warn('Failed to revoke object URL:', error);
+            }
+          }
+        }
+
+        if (activePlayer === this) {
+          activePlayer = null;
+        }
+
+        this.loaderScript = null;
+      }
+    };
+  }
+
+  private describe(): string {
+    return this.metadata?.title ?? this.metadata?.id ?? this.metadata?.persistId ?? this.filename ?? 'unknown ROM';
+  }
+
+  private setLoaderScript(script: HTMLScriptElement | null): void {
+    this.loaderScript = script;
+  }
+
+  setDestroyHook(hook: (original: () => Promise<void>) => () => Promise<void>): void {
+    const originalDestroy = this.destroy.bind(this);
+    this.destroy = hook(originalDestroy);
+  }
+
+  static async start(options: RomPlayerOptions): Promise<RomPlayer> {
+    ensureDomAvailable();
+
+    const element = resolveTargetElement(options.target);
+
+    await cleanupActivePlayer();
+
+    const effectiveName = options.filename ?? ('name' in options.file ? (options.file as File).name : undefined);
+    const filename = normaliseFilename(effectiveName);
+    const displayName = options.metadata?.title ?? filename ?? effectiveName ?? 'Unknown ROM';
+    const core = options.core ?? detectEmulatorCore(filename ?? effectiveName, options.metadata);
+
+    const gameUrl = 'name' in options.file ? (options.file as File) : createObjectUrl(options.file);
+    const objectUrlCreated = typeof gameUrl === 'string';
+
+    element.innerHTML = '';
+
+    const instance = new RomPlayer(element, core, gameUrl, options.metadata, filename, objectUrlCreated);
+
+    setupPersistentSave(instance, options.metadata);
+
+    const script = applyEmulatorConfig(instance, options, core, gameUrl, displayName);
+    instance.setLoaderScript(script);
+
+    if (options.autoLoadLoaderScript !== false) {
+      script.onerror = () => {
+        if (activePlayer === instance) {
+          activePlayer = null;
+        }
+        void instance.destroy();
+        console.error('Failed to load EmulatorJS resources');
+      };
+
+      document.body.appendChild(script);
+    }
+
+    activePlayer = instance;
+
+    return instance;
+  }
 }
 
-interface InternalPlayerInstance extends RomPlayerInstance {
-  loaderScript: HTMLScriptElement | null;
-  destroyed: boolean;
-}
-
-let activePlayer: InternalPlayerInstance | null = null;
+let activePlayer: RomPlayer | null = null;
 let activePlayerDestroyPromise: Promise<void> | null = null;
 
 function ensureDomAvailable(): void {
   if (typeof document === 'undefined') {
-    throw new Error('startRomPlayer requires a browser or DOM-like environment');
+    throw new Error('RomPlayer.start requires a browser or DOM-like environment');
   }
 }
 
@@ -621,7 +751,7 @@ function cleanupActivePlayer(): Promise<void> {
 }
 
 
-function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partial<RomMetadata>): void {
+function setupPersistentSave(instance: RomPlayer, metadata?: Partial<RomMetadata>): void {
   const romLabel = metadata?.title ?? metadata?.id ?? metadata?.persistId ?? 'unknown ROM';
 
   const persistenceKeys = Array.from(
@@ -1153,55 +1283,56 @@ function setupPersistentSave(instance: InternalPlayerInstance, metadata?: Partia
     return allSaves;
   };
 
-  const originalDestroy = instance.destroy.bind(instance);
-  instance.destroy = () => {
-    if (destroyInProgress) {
-      return destroyInProgress;
-    }
-
-    console.log('[ROM Scout] Destroying player instance for ROM:', romLabel);
-
-    const destroyPromise = (async () => {
-      try {
-        // Clear all pending timeouts and intervals
-        clearAllScheduled();
-        console.log('[ROM Scout] Cleared all scheduled timeouts and intervals for ROM:', romLabel);
-
-        // Clear pending state to prevent any retries
-        pendingState = null;
-
-        await persistState('destroy', true);
-
-        // Restore previous callbacks
-        if (globalScope.EJS_ready === readyWrapper) {
-          if (previousReady) {
-            globalScope.EJS_ready = previousReady;
-          } else {
-            delete globalScope.EJS_ready;
-          }
-        }
-
-        if ((globalScope as any).EJS_onGameStart === onGameStartWrapper) {
-          if (previousOnGameStart) {
-            (globalScope as any).EJS_onGameStart = previousOnGameStart;
-          } else {
-            delete (globalScope as any).EJS_onGameStart;
-          }
-        }
-      } finally {
-        await originalDestroy();
+  instance.setDestroyHook((originalDestroy) => {
+    return () => {
+      if (destroyInProgress) {
+        return destroyInProgress;
       }
-    })();
 
-    destroyInProgress = destroyPromise.finally(() => {
-      destroyInProgress = null;
-    });
+      console.log('[ROM Scout] Destroying player instance for ROM:', romLabel);
 
-    return destroyInProgress;
-  };
+      const destroyPromise = (async () => {
+        try {
+          // Clear all pending timeouts and intervals
+          clearAllScheduled();
+          console.log('[ROM Scout] Cleared all scheduled timeouts and intervals for ROM:', romLabel);
+
+          // Clear pending state to prevent any retries
+          pendingState = null;
+
+          await persistState('destroy', true);
+
+          // Restore previous callbacks
+          if (globalScope.EJS_ready === readyWrapper) {
+            if (previousReady) {
+              globalScope.EJS_ready = previousReady;
+            } else {
+              delete globalScope.EJS_ready;
+            }
+          }
+
+          if ((globalScope as any).EJS_onGameStart === onGameStartWrapper) {
+            if (previousOnGameStart) {
+              (globalScope as any).EJS_onGameStart = previousOnGameStart;
+            } else {
+              delete (globalScope as any).EJS_onGameStart;
+            }
+          }
+        } finally {
+          await originalDestroy();
+        }
+      })();
+
+      destroyInProgress = destroyPromise.finally(() => {
+        destroyInProgress = null;
+      });
+
+      return destroyInProgress;
+    };
+  });
 }
 
-function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlayerOptions, core: string, gameUrl: string | Blob, gameName: string): HTMLScriptElement {
+function applyEmulatorConfig(instance: RomPlayer, options: RomPlayerOptions, core: string, gameUrl: string | Blob, gameName: string): HTMLScriptElement {
   const globalScope = globalThis as EmulatorGlobal;
 
   const element = instance.element;
@@ -1227,7 +1358,7 @@ function applyEmulatorConfig(instance: InternalPlayerInstance, options: RomPlaye
   return script;
 }
 
-function clearEmulatorConfig(instance: InternalPlayerInstance): void {
+function clearEmulatorConfig(instance: RomPlayer): void {
   const globalScope = globalThis as EmulatorGlobal;
 
   if (globalScope.EJS_emulator && typeof globalScope.EJS_emulator.callEvent === 'function') {
@@ -1260,107 +1391,5 @@ function clearEmulatorConfig(instance: InternalPlayerInstance): void {
   instance.element.innerHTML = '';
 }
 
-export async function startRomPlayer(options: RomPlayerOptions): Promise<RomPlayerInstance> {
-  ensureDomAvailable();
-
-  const element = resolveTargetElement(options.target);
-
-  await cleanupActivePlayer();
-
-  const effectiveName = options.filename ?? ('name' in options.file ? (options.file as File).name : undefined);
-  const filename = normaliseFilename(effectiveName);
-  const displayName = options.metadata?.title ?? filename ?? effectiveName ?? 'Unknown ROM';
-  const core = options.core ?? detectEmulatorCore(filename ?? effectiveName, options.metadata);
-
-  const gameUrl = 'name' in options.file ? options.file as File : createObjectUrl(options.file);
-
-  element.innerHTML = '';
-
-  const instance: InternalPlayerInstance = {
-    element,
-    core,
-    gameUrl,
-    metadata: options.metadata,
-    filename,
-    loaderScript: null,
-    destroyed: false,
-    destroy: async () => {
-      if (instance.destroyed) {
-        return;
-      }
-      instance.destroyed = true;
-
-      try {
-        clearEmulatorConfig(instance);
-      } finally {
-        if (instance.loaderScript && instance.loaderScript.isConnected) {
-          instance.loaderScript.remove();
-        }
-        if (instance.gameUrl) {
-          const urlFactory = getUrlFactory();
-          if (typeof instance.gameUrl === 'string' && urlFactory && typeof urlFactory.revokeObjectURL === 'function') {
-            try {
-              urlFactory.revokeObjectURL(instance.gameUrl);
-            } catch (error) {
-              console.warn('Failed to revoke object URL:', error);
-            }
-          }
-        }
-        if (activePlayer === instance) {
-          activePlayer = null;
-        }
-      }
-    },
-    persistSave: async () => false,
-    loadLatestSave: async () => false,
-    loadSaveByTimestamp: async () => false,
-    listSaves: async () => [],
-    restart: async () => {
-      if (instance.destroyed) {
-        console.warn('[ROM Scout] Restart requested on destroyed instance');
-        return;
-      }
-
-      const globalScope = globalThis as EmulatorGlobal;
-      const emulator = globalScope.EJS_emulator;
-      if (!emulator) {
-        console.warn('[ROM Scout] No EmulatorJS instance available to restart ROM');
-        return;
-      }
-
-      const gameManager = emulator.gameManager;
-      if (gameManager && typeof gameManager.restart === 'function') {
-        try {
-          gameManager.restart();
-          console.log('[ROM Scout] Restarted ROM via EmulatorJS gameManager.restart()');
-          return;
-        } catch (error) {
-          console.warn('[ROM Scout] Failed to restart ROM via EmulatorJS gameManager.restart():', error);
-        }
-      }
-
-      console.warn('[ROM Scout] EmulatorJS instance does not expose a restart mechanism');
-    },
-  };
-
-  setupPersistentSave(instance, options.metadata);
-
-  const script = applyEmulatorConfig(instance, options, core, gameUrl, displayName);
-  instance.loaderScript = script;
-
-  if (options.autoLoadLoaderScript !== false) {
-    script.onerror = () => {
-      if (activePlayer === instance) {
-        activePlayer = null;
-      }
-      void instance.destroy();
-      console.error('Failed to load EmulatorJS resources');
-    };
-
-    document.body.appendChild(script);
-  }
-
-  activePlayer = instance;
-
-  return instance;
-}
+export const startRomPlayer = RomPlayer.start;
+export type RomPlayerInstance = RomPlayer;

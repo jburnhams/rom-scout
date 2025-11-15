@@ -1,9 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { Window } from 'happy-dom';
-import { startRomPlayer, detectEmulatorCore } from '../src/player.js';
+import { RomPlayer, startRomPlayer, detectEmulatorCore } from '../src/player.js';
 
-describe('startRomPlayer', () => {
+describe('RomPlayer.start', () => {
   let windowInstance: Window;
   let cleanupGlobals: (() => void) | null = null;
   let originalURL: typeof URL | undefined;
@@ -83,13 +83,17 @@ describe('startRomPlayer', () => {
     assert.strictEqual(detectEmulatorCore('unknown.xyz'), 'nes');
   });
 
+  it('exposes startRomPlayer as alias of RomPlayer.start', () => {
+    assert.strictEqual(startRomPlayer, RomPlayer.start);
+  });
+
   it('configures emulator globals and appends loader script', async () => {
     const container = createContainer('emulator-target');
 
     const romData = new Uint8Array([0, 1, 2, 3]);
     const blob = createBlob(romData);
 
-    const instance = await startRomPlayer({
+    const instance = await RomPlayer.start({
       target: container,
       file: blob,
       filename: 'test.nes',
@@ -122,7 +126,7 @@ describe('startRomPlayer', () => {
     const romData = new Uint8Array([0x50, 0x4B, 0x03, 0x04]);
     const romBlob = createBlob(romData, 'application/zip');
 
-    const instance = await startRomPlayer({
+    const instance = await RomPlayer.start({
       target: container,
       file: romBlob,
       filename: 'folder/archive.zip',
@@ -142,7 +146,7 @@ describe('startRomPlayer', () => {
     const blobA = createBlob(new Uint8Array([1, 2, 3]));
     const blobB = createBlob(new Uint8Array([4, 5, 6]));
 
-    const first = await startRomPlayer({
+    const first = await RomPlayer.start({
       target: container,
       file: blobA,
       filename: 'first.nes',
@@ -152,7 +156,7 @@ describe('startRomPlayer', () => {
     });
 
     const firstUrl = first.gameUrl;
-    const second = await startRomPlayer({
+    const second = await RomPlayer.start({
       target: container,
       file: blobB,
       filename: 'second.nes',
@@ -185,10 +189,10 @@ describe('startRomPlayer', () => {
       return originalAppendChild(node);
     } as any;
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'script-test.nes',
@@ -258,10 +262,10 @@ describe('startRomPlayer', () => {
 
     const blob = new Blob(['fake rom'], { type: 'application/octet-stream' });
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'indexeddb-test.nes',
@@ -397,10 +401,10 @@ describe('startRomPlayer', () => {
     document.body.appendChild(container);
     const blob = new Blob(['test'], { type: 'application/octet-stream' });
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'ongamestart-test.nes',
@@ -497,10 +501,10 @@ describe('startRomPlayer', () => {
     document.body.appendChild(container);
     const blob = new Blob(['test'], { type: 'application/octet-stream' });
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'retry-test.nes',
@@ -609,7 +613,7 @@ describe('startRomPlayer', () => {
     document.body.appendChild(container);
     const blob = new Blob(['test'], { type: 'application/octet-stream' });
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     // Track setTimeout/setInterval calls
     const originalSetTimeout = globalThis.setTimeout;
@@ -651,7 +655,7 @@ describe('startRomPlayer', () => {
     }) as typeof clearInterval;
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'cleanup-test.nes',
@@ -740,10 +744,10 @@ describe('startRomPlayer', () => {
     document.body.appendChild(container);
     const blob = new Blob(['test'], { type: 'application/octet-stream' });
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'poll-test.nes',
@@ -843,7 +847,7 @@ describe('startRomPlayer', () => {
     document.body.appendChild(container);
     const blob = new Blob(['test'], { type: 'application/octet-stream' });
 
-    let instance: Awaited<ReturnType<typeof startRomPlayer>> | null = null;
+    let instance: Awaited<ReturnType<typeof RomPlayer.start>> | null = null;
 
     // Capture console.warn calls
     const originalWarn = console.warn;
@@ -854,7 +858,7 @@ describe('startRomPlayer', () => {
     };
 
     try {
-      instance = await startRomPlayer({
+      instance = await RomPlayer.start({
         target: container,
         file: blob,
         filename: 'maxretry-test.nes',

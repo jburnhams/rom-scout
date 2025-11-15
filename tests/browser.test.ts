@@ -49,6 +49,7 @@ describe('Browser Bundle Tests', () => {
     const globalApi = context.window[globalName] ?? context.globalThis[globalName];
     assert.ok(globalApi, `Global ${globalName} namespace should exist`);
     assert.strictEqual(typeof globalApi.RomScout, 'function', 'Should export RomScout class');
+    assert.strictEqual(typeof globalApi.RomPlayer, 'function', 'Should export RomPlayer class');
     assert.strictEqual(typeof globalApi.calculateHash, 'function', 'Should export calculateHash function');
     assert.strictEqual(typeof globalApi.HasheousClient, 'function', 'Should export HasheousClient class');
     assert.strictEqual(typeof globalApi.startRomPlayer, 'function', 'Should export startRomPlayer function');
@@ -62,6 +63,7 @@ describe('Browser Bundle Tests', () => {
     const mod = await import(moduleUrl);
 
     assert.strictEqual(typeof mod.RomScout, 'function', 'Should export RomScout class');
+    assert.strictEqual(typeof mod.RomPlayer, 'function', 'Should export RomPlayer class');
     assert.strictEqual(typeof mod.calculateHash, 'function', 'Should export calculateHash function');
     assert.strictEqual(typeof mod.HasheousClient, 'function', 'Should export HasheousClient class');
     assert.strictEqual(typeof mod.startRomPlayer, 'function', 'Should export startRomPlayer function');
@@ -139,6 +141,7 @@ describe('Functional Tests - Verify Bundle Works Correctly', () => {
 
     // Test API clients are available
     assert.strictEqual(typeof api.HasheousClient, 'function', 'HasheousClient should be a constructor');
+    assert.strictEqual(typeof api.RomPlayer, 'function', 'RomPlayer should be exported');
     assert.strictEqual(typeof api.startRomPlayer, 'function', 'startRomPlayer should be exported');
     assert.strictEqual(typeof api.detectEmulatorCore, 'function', 'detectEmulatorCore should be exported');
   });

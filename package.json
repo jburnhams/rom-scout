@@ -1,7 +1,7 @@
 {
   "name": "rom-scout",
   "version": "0.1.25",
-  "description": "A JavaScript library for identifying ROM files and fetching metadata from Hasheous",
+  "description": "A toolkit for identifying ROM files, fetching Hasheous metadata, and launching games with EmulatorJS",
   "repository": {
     "type": "git",
     "url": "https://github.com/jburnhams/rom-scout.git"
@@ -66,7 +66,8 @@
     "scraper",
     "hasheous",
     "retro-gaming",
-    "game-identification"
+    "game-identification",
+    "emulatorjs"
   ],
   "author": "jburnhams",
   "license": "MIT",
