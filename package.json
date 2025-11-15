@@ -24,6 +24,12 @@
       "types": "./dist/types/index.d.ts",
       "default": "./dist/bundles/rom-scout.esm.js"
     },
+    "./player": {
+      "types": "./dist/types/player.d.ts",
+      "import": "./dist/esm/player.js",
+      "require": "./dist/cjs/player.cjs",
+      "default": "./dist/esm/player.js"
+    },
     "./browser": {
       "default": "./dist/browser/rom-scout.min.js"
     },
