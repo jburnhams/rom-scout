@@ -30,7 +30,7 @@ jobs:
 
       - name: 'Automated Version Bump'
         id: version-bump
-        uses: 'phips28/gh-action-bump-version@v11.0.7'
+        uses: 'phips28/gh-action-bump-version@v12.0.2'
         with:
           tag-prefix: 'v'
           major-wording: 'major,Major,breaking,Breaking'
