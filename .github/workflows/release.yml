@@ -58,7 +58,7 @@ jobs:
 
       - name: 'Create GitHub Release'
         if: ${{ steps.version-bump.outputs.newTag }}
-        uses: 'softprops/action-gh-release@v2'
+        uses: 'softprops/action-gh-release@v3'
         with:
           tag_name: ${{ steps.version-bump.outputs.newTag }}
           name: Release ${{ steps.version-bump.outputs.newTag }}
